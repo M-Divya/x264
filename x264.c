@@ -1873,7 +1873,7 @@ static FILE * open_csvlog_file( const char *filename )
         /* open new csv file and write header */
         csvfh = x264_fopen( filename, "wb" );
         if( csvfh )
-            fprintf( csvfh, "EncodeOrder, Type, POC, QP, Bytes, Y PSNR, U PSNR, V PSNR, YUV PSNR, SSIM, SSIM(dB)\n" );
+            fprintf( csvfh, "EncodeOrder, Type, POC, AverageQP, Bytes, Y PSNR, U PSNR, V PSNR, YUV PSNR, SSIM, SSIM(dB), AverageRateFactor\n" );
     }
     return csvfh;
 }
@@ -1918,12 +1918,14 @@ static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, c
                 ssim_db = 100;
             ssim_db = -10.0 * log10(inv_ssim);
 
-            fprintf( opt->csvfh, "%.5f, %5.3f",
+            fprintf( opt->csvfh, "%.5f, %5.3f, ",
                      pic_out->prop.f_ssim,
                      ssim_db );
         }
         else
-            fputs( "-, -", opt->csvfh );
+            fputs( "-, -, ", opt->csvfh );
+
+        fprintf( opt->csvfh, "%2.8f,", pic_out->prop.f_crf_avg );
         fputs( "\n", opt->csvfh );
     }
 }
