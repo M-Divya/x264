@@ -156,6 +156,7 @@ typedef struct {
     FILE *tcfile_out;
     double timebase_convert_multiplier;
     int i_pulldown;
+    FILE *csvfh;
 } cli_opt_t;
 
 /* file i/o operation structs */
@@ -263,6 +264,8 @@ static const float pulldown_frame_duration[10] = { 0.0, 1, 0.5, 0.5, 1, 1, 1.5, 
 static void help( x264_param_t *defaults, int longhelp );
 static int  parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt );
 static int  encode( x264_param_t *param, cli_opt_t *opt );
+static FILE *open_csvlog_file( const char *filename );
+static void write_framelog_to_csvfile( const x264_t *h, const cli_opt_t *opt, const x264_picture_t *pic_out, int frame_size );
 
 /* logging and printing for within the cli system */
 static int cli_log_level;
@@ -393,6 +396,8 @@ int main( int argc, char **argv )
         fclose( opt.tcfile_out );
     if( opt.qpfile )
         fclose( opt.qpfile );
+    if( opt.csvfh )
+        fclose( opt.csvfh );
 
 #ifdef _WIN32
     SetConsoleTitleW( org_console_title );
@@ -940,6 +945,8 @@ static void help( x264_param_t *defaults, int longhelp )
     x264_register_vid_filters();
     x264_vid_filter_help( longhelp );
     H0( "\n" );
+    H1( "       --csv <string>          Comma separated log file(csv file) per frame \n" );
+    H0( "\n" );
 }
 
 typedef enum
@@ -974,7 +981,8 @@ typedef enum
     OPT_DTS_COMPRESSION,
     OPT_OUTPUT_CSP,
     OPT_INPUT_RANGE,
-    OPT_RANGE
+    OPT_RANGE,
+    OPT_CSVFILE
 } OptionsOPT;
 
 static char short_options[] = "8A:B:b:f:hI:i:m:o:p:q:r:t:Vvw";
@@ -1143,6 +1151,7 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
+    { "csv",         required_argument, NULL, OPT_CSVFILE },
     {0, 0, 0, 0}
 };
 
@@ -1448,6 +1457,10 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                     fclose( opt->qpfile );
                     return -1;
                 }
+                break;
+            case OPT_CSVFILE:
+                opt->csvfh = open_csvlog_file( optarg );
+                FAIL_IF_ERROR( !opt->csvfh, "can't open csvlog file `%s'\n", optarg );
                 break;
             case OPT_THREAD_INPUT:
                 b_thread_input = 1;
@@ -1777,7 +1790,7 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
     }
 }
 
-static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts )
+static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts, cli_opt_t *opt )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
@@ -1793,6 +1806,9 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
         i_frame_size = cli_output.write_frame( hout, nal[0].p_payload, i_frame_size, &pic_out );
         *last_dts = pic_out.i_dts;
     }
+
+    if( i_frame_size && h->param.i_log_level >= X264_LOG_INFO )
+        write_framelog_to_csvfile( h, opt, &pic_out, i_frame_size );
 
     return i_frame_size;
 }
@@ -1840,6 +1856,76 @@ if( cond )\
     x264_cli_log( "x264", X264_LOG_ERROR, __VA_ARGS__ );\
     retval = -1;\
     goto fail;\
+}
+
+static FILE * open_csvlog_file( const char *filename )
+{
+    FILE *csvfh = NULL;
+    csvfh = x264_fopen( filename, "r" );
+    if( csvfh )
+    {
+        fclose( csvfh );
+        /* file already exist re-open the file with append mode */
+        csvfh = x264_fopen( filename, "ab" );
+    }
+    else
+    {
+        /* open new csv file and write header */
+        csvfh = x264_fopen( filename, "wb" );
+        if( csvfh )
+            fprintf( csvfh, "EncodeOrder, Type, POC, QP, Bytes, Y PSNR, U PSNR, V PSNR, YUV PSNR, SSIM, SSIM(dB)\n" );
+    }
+    return csvfh;
+}
+
+static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, const x264_picture_t *pic_out, int frame_size )
+{
+
+    int i;
+    x264_t *h;
+    for( i = 0; i < ht->i_thread_frames; i++ )
+    {
+        if( pic_out->poc == ht->thread[i]->fdec->i_poc )
+        {
+            h = ht->thread[i];
+            break;
+        }
+    }
+
+    if( opt->csvfh )
+    {
+        fprintf( opt->csvfh, "%4d, %c, %3d, %.2f, %d, ",
+                 h->i_frame,
+                 h->sh.i_type == SLICE_TYPE_I ? 'I' : ( h->sh.i_type == SLICE_TYPE_P ? 'P' : 'B' ),
+                 h->fdec->i_poc,
+                 h->fdec->f_qp_avg_aq,
+                 frame_size );
+        /* if psnr enabled */
+        if( h->param.analyse.b_psnr )
+            fprintf( opt->csvfh, "%5.2f, %5.2f, %5.2f, %5.2f, ",
+                     pic_out->prop.f_psnr[0],
+                     pic_out->prop.f_psnr[1],
+                     pic_out->prop.f_psnr[2],
+                     pic_out->prop.f_psnr_avg );
+        else
+            fputs( "-, -, -, -, ", opt->csvfh );
+        /* if ssim enabled */
+        if( h->param.analyse.b_ssim )
+        {
+            double inv_ssim = 1 - pic_out->prop.f_ssim;
+            double ssim_db;
+            if( inv_ssim <= 0.0000000001 )
+                ssim_db = 100;
+            ssim_db = -10.0 * log10(inv_ssim);
+
+            fprintf( opt->csvfh, "%.5f, %5.3f",
+                     pic_out->prop.f_ssim,
+                     ssim_db );
+        }
+        else
+            fputs( "-, -", opt->csvfh );
+        fputs( "\n", opt->csvfh );
+    }
 }
 
 static int encode( x264_param_t *param, cli_opt_t *opt )
@@ -1947,7 +2033,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts );
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, opt );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
@@ -1972,7 +2058,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts );
+        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, opt );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */

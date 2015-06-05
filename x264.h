@@ -829,6 +829,8 @@ typedef struct
     x264_sei_t extra_sei;
     /* private user data. copied from input to output frames. */
     void *opaque;
+    /* Ignored on input, set to picture count, returned on output */
+	int poc;
 } x264_picture_t;
 
 /* x264_picture_init:
