@@ -1860,6 +1860,20 @@ if( cond )\
 
 static FILE * open_csvlog_file( const char *filename )
 {
+        static const char* CSVHeader =
+        " EncodeOrder,"
+        " FrameType,"
+        " POC,"
+        " AverageQP,"
+        " FrameSize,"
+        " Y PSNR,"
+        " U PSNR,"
+        " V PSNR,"
+        " YUV PSNR,"
+        " SSIM,"
+        " SSIM(db),"
+        " Average RateFactor \n";
+
     FILE *csvfh = NULL;
     csvfh = x264_fopen( filename, "r" );
     if( csvfh )
@@ -1873,7 +1887,7 @@ static FILE * open_csvlog_file( const char *filename )
         /* open new csv file and write header */
         csvfh = x264_fopen( filename, "wb" );
         if( csvfh )
-            fprintf( csvfh, "EncodeOrder, Type, POC, AverageQP, Bytes, Y PSNR, U PSNR, V PSNR, YUV PSNR, SSIM, SSIM(dB), AverageRateFactor\n" );
+            fprintf( csvfh, "%s" CSVHeader );
     }
     return csvfh;
 }
