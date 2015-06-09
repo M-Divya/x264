@@ -1872,7 +1872,29 @@ static FILE * open_csvlog_file( const char *filename )
         " YUV PSNR,"
         " SSIM,"
         " SSIM(db),"
-        " Average RateFactor \n";
+        " Average RateFactor,";
+
+        static const char* MBHeader =
+        " I_4x4,"
+        " I_8x8,"
+        " I_16x16,"
+        " I_PCM,"
+        " P_L0,"
+        " P_8x8,"
+        " P_SKIP,"
+        " B_DIRECT,"
+        " B_L0_L0,"
+        " B_L0_L1,"
+        " B_L0_BI,"
+        " B_L1_L0,"
+        " B_L1_L1,"
+        " B_L1_BI,"
+        " B_BI_L0,"
+        " B_BI_L1,"
+        " B_BI_BI,"
+        " B_8x8,"
+        " B_SKIP,"
+        " Total MB Count \n";
 
     FILE *csvfh = NULL;
     csvfh = x264_fopen( filename, "r" );
@@ -1887,7 +1909,7 @@ static FILE * open_csvlog_file( const char *filename )
         /* open new csv file and write header */
         csvfh = x264_fopen( filename, "wb" );
         if( csvfh )
-            fprintf( csvfh, "%s" CSVHeader );
+            fprintf( csvfh, "%s%s" CSVHeader, MBHeader );
     }
     return csvfh;
 }
@@ -1939,7 +1961,18 @@ static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, c
         else
             fputs( "-, -, ", opt->csvfh );
 
-        fprintf( opt->csvfh, "%2.8f,", pic_out->prop.f_crf_avg );
+        fprintf( opt->csvfh, "%2.8f,",
+                 pic_out->prop.f_crf_avg );
+
+        int mbCount = 0;
+        for( int i = 0; i < X264_MBTYPE_MAX; i++ )
+        {
+            fprintf( opt->csvfh, "%d,",
+                     h->stat.frame.i_mb_count[i] );
+            mbCount += h->stat.frame.i_mb_count[i];
+        }
+        fprintf( opt->csvfh, "%d",
+                 mbCount);
         fputs( "\n", opt->csvfh );
     }
 }
