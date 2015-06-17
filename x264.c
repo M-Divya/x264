@@ -1875,14 +1875,14 @@ static FILE * open_csvlog_file( const char *filename )
         " Average RateFactor,";
 
         static const char* MBHeader =
-        " I_4x4,"
-        " I_8x8,"
-        " I_16x16,"
-        " I_PCM,"
-        " P_L0,"
-        " P_8x8,"
-        " P_SKIP,"
-        " B_DIRECT,"
+        " Intra 4x4 mbCount,"
+        " Intra 8x8 mbCount,"
+        " Intra 16x16 mbCount,"
+        " Intra PCM mbCount,"
+        " InterP 16x16 16x8 and 8x16 mbCount,"
+        " InterP 8x8 mbCount,"
+        " InterP SKIP mbCount,"
+        " Inter BDIRECT mbCount,"
         " B_L0_L0,"
         " B_L0_L1,"
         " B_L0_BI,"
@@ -1892,8 +1892,8 @@ static FILE * open_csvlog_file( const char *filename )
         " B_BI_L0,"
         " B_BI_L1,"
         " B_BI_BI,"
-        " B_8x8,"
-        " B_SKIP,"
+        " InterB 8x8 mbCount,"
+        " InterB SKIP mbCount,"
         " Total MB Count \n";
 
     FILE *csvfh = NULL;
