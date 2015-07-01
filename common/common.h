@@ -887,6 +887,10 @@ struct x264_t
         int ref_blind_dupe; /* The index of the blind reference frame duplicate. */
         int8_t deblock_ref_table[X264_REF_MAX*2+2];
 #define deblock_ref_table(x) h->mb.deblock_ref_table[(x)+2]
+
+        uint64_t i_mb_luma_satd;
+        uint64_t i_mb_chroma_satd;
+
     } mb;
 
     /* rate control encoding only */
@@ -968,7 +972,6 @@ struct x264_t
     x264_bitstream_function_t bsf;
 
     x264_lookahead_t *lookahead;
-
 #if HAVE_OPENCL
     x264_opencl_t opencl;
 #endif

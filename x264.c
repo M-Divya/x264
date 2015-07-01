@@ -1894,7 +1894,9 @@ static FILE * open_csvlog_file( const char *filename )
         " B_BI_BI,"
         " InterB 8x8 mbCount,"
         " InterB SKIP mbCount,"
-        " Total MB Count \n";
+        " Total MB Count,"
+        " AverageLumaDistortion,"
+        "AverageChromaDistortion \n";
 
     FILE *csvfh = NULL;
     csvfh = x264_fopen( filename, "r" );
@@ -1971,8 +1973,12 @@ static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, c
                      h->stat.frame.i_mb_count[i] );
             mbCount += h->stat.frame.i_mb_count[i];
         }
-        fprintf( opt->csvfh, "%d",
-                 mbCount);
+        fprintf( opt->csvfh, "%d, %d, %d",
+                 mbCount,
+                 h->mb.i_mb_luma_satd / mbCount,
+                 h->mb.i_mb_chroma_satd / mbCount);
+        h->mb.i_mb_luma_satd = h->mb.i_mb_chroma_satd = 0;
+
         fputs( "\n", opt->csvfh );
     }
 }

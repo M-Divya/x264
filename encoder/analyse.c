@@ -3845,6 +3845,26 @@ skip_analysis:
         x264_psy_trellis_init( h, 0 );
     if( h->mb.b_trellis == 1 || h->mb.b_noise_reduction )
         h->mb.i_skip_intra = 0;
+
+    /* store luma and chroma satd for logging */
+    if( h->mb.b_chroma_me )
+    {
+        if( analysis.i_satd_i16x16 < COST_MAX )
+            h->mb.i_mb_luma_satd += analysis.i_satd_i16x16 - analysis.i_satd_chroma;
+        if( analysis.i_satd_i8x8 < COST_MAX )
+            h->mb.i_mb_luma_satd += analysis.i_satd_i8x8 - analysis.i_satd_chroma;
+        if( analysis.i_satd_i4x4 < COST_MAX )
+            h->mb.i_mb_luma_satd += analysis.i_satd_i4x4 - analysis.i_satd_chroma;
+        if( analysis.i_satd_chroma < COST_MAX )
+            h->mb.i_mb_chroma_satd = analysis.i_satd_chroma;
+    }
+    else
+    {
+        h->mb.i_mb_luma_satd += analysis.i_satd_i16x16;
+        h->mb.i_mb_luma_satd += analysis.i_satd_i8x8;
+        h->mb.i_mb_luma_satd += analysis.i_satd_i4x4;
+        h->mb.i_mb_chroma_satd = analysis.i_satd_chroma;
+    }
 }
 
 /*-------------------- Update MB from the analysis ----------------------*/
