@@ -1935,7 +1935,7 @@ static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, c
         fprintf( opt->csvfh, "%4d, %c, %3d, %.2f, %d, ",
                  h->i_frame,
                  h->sh.i_type == SLICE_TYPE_I ? 'I' : ( h->sh.i_type == SLICE_TYPE_P ? 'P' : 'B' ),
-                 h->fdec->i_poc,
+                 h->fdec->i_poc >> 1,
                  h->fdec->f_qp_avg_aq,
                  frame_size );
         /* if psnr enabled */
