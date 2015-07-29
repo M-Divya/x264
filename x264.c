@@ -42,6 +42,7 @@
 #include <getopt.h>
 #include "common/common.h"
 #include "x264cli.h"
+#include "extras/x264-csv.h"
 #include "input/input.h"
 #include "output/output.h"
 #include "filters/filters.h"
@@ -264,8 +265,6 @@ static const float pulldown_frame_duration[10] = { 0.0, 1, 0.5, 0.5, 1, 1, 1.5, 
 static void help( x264_param_t *defaults, int longhelp );
 static int  parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt );
 static int  encode( x264_param_t *param, cli_opt_t *opt );
-static FILE *open_csvlog_file( const char *filename );
-static void write_framelog_to_csvfile( const x264_t *h, const cli_opt_t *opt, const x264_picture_t *pic_out, int frame_size );
 
 /* logging and printing for within the cli system */
 static int cli_log_level;
@@ -1358,6 +1357,7 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     char *input_filename = NULL;
     const char *demuxer = demuxer_names[0];
     char *output_filename = NULL;
+    char *csv_filename = NULL;
     const char *muxer = muxer_names[0];
     char *tcfile_name = NULL;
     x264_param_t defaults;
@@ -1459,8 +1459,7 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                 }
                 break;
             case OPT_CSVFILE:
-                opt->csvfh = open_csvlog_file( optarg );
-                FAIL_IF_ERROR( !opt->csvfh, "can't open csvlog file `%s'\n", optarg );
+                csv_filename = optarg;
                 break;
             case OPT_THREAD_INPUT:
                 b_thread_input = 1;
@@ -1748,6 +1747,13 @@ generic_option:
             }
     }
 
+    if (param->i_log_level >= X264_LOG_INFO && csv_filename)
+    {
+        opt->csvfh = open_csvlog_file(csv_filename);
+        FAIL_IF_ERROR(!opt->csvfh, "can't open csvlog file `%s'\n", csv_filename);
+    }
+    else
+        opt->csvfh = NULL;
 
     return 0;
 }
@@ -1808,7 +1814,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     }
 
     if( i_frame_size && h->param.i_log_level >= X264_LOG_INFO )
-        write_framelog_to_csvfile( h, opt, &pic_out, i_frame_size );
+        write_framelog_to_csvfile(h, opt->csvfh, &pic_out, i_frame_size);
 
     return i_frame_size;
 }
@@ -1856,131 +1862,6 @@ if( cond )\
     x264_cli_log( "x264", X264_LOG_ERROR, __VA_ARGS__ );\
     retval = -1;\
     goto fail;\
-}
-
-static FILE * open_csvlog_file( const char *filename )
-{
-        static const char* CSVHeader =
-        " EncodeOrder,"
-        " FrameType,"
-        " POC,"
-        " AverageQP,"
-        " FrameSize,"
-        " Y PSNR,"
-        " U PSNR,"
-        " V PSNR,"
-        " YUV PSNR,"
-        " SSIM,"
-        " SSIM(db),"
-        " Average RateFactor,";
-
-        static const char* MBHeader =
-        " Intra 4x4 mbCount,"
-        " Intra 8x8 mbCount,"
-        " Intra 16x16 mbCount,"
-        " Intra PCM mbCount,"
-        " InterP 16x16 16x8 and 8x16 mbCount,"
-        " InterP 8x8 mbCount,"
-        " InterP SKIP mbCount,"
-        " Inter BDIRECT mbCount,"
-        " B_L0_L0,"
-        " B_L0_L1,"
-        " B_L0_BI,"
-        " B_L1_L0,"
-        " B_L1_L1,"
-        " B_L1_BI,"
-        " B_BI_L0,"
-        " B_BI_L1,"
-        " B_BI_BI,"
-        " InterB 8x8 mbCount,"
-        " InterB SKIP mbCount,"
-        " Total MB Count,"
-        " AverageLumaDistortion,"
-        "AverageChromaDistortion \n";
-
-    FILE *csvfh = NULL;
-    csvfh = x264_fopen( filename, "r" );
-    if( csvfh )
-    {
-        fclose( csvfh );
-        /* file already exist re-open the file with append mode */
-        csvfh = x264_fopen( filename, "ab" );
-    }
-    else
-    {
-        /* open new csv file and write header */
-        csvfh = x264_fopen( filename, "wb" );
-        if( csvfh )
-            fprintf( csvfh, "%s%s", CSVHeader, MBHeader );
-    }
-    return csvfh;
-}
-
-static void write_framelog_to_csvfile( const x264_t *ht, const cli_opt_t *opt, const x264_picture_t *pic_out, int frame_size )
-{
-
-    int i;
-    x264_t *h;
-    for( i = 0; i < ht->i_thread_frames; i++ )
-    {
-        if( pic_out->poc == ht->thread[i]->fdec->i_poc )
-        {
-            h = ht->thread[i];
-            break;
-        }
-    }
-
-    if( opt->csvfh )
-    {
-        fprintf( opt->csvfh, "%4d, %c, %3d, %.2f, %d, ",
-                 h->i_frame,
-                 h->sh.i_type == SLICE_TYPE_I ? 'I' : ( h->sh.i_type == SLICE_TYPE_P ? 'P' : 'B' ),
-                 h->fdec->i_poc >> 1,
-                 h->fdec->f_qp_avg_aq,
-                 frame_size );
-        /* if psnr enabled */
-        if( h->param.analyse.b_psnr )
-            fprintf( opt->csvfh, "%5.2f, %5.2f, %5.2f, %5.2f, ",
-                     pic_out->prop.f_psnr[0],
-                     pic_out->prop.f_psnr[1],
-                     pic_out->prop.f_psnr[2],
-                     pic_out->prop.f_psnr_avg );
-        else
-            fputs( "-, -, -, -, ", opt->csvfh );
-        /* if ssim enabled */
-        if( h->param.analyse.b_ssim )
-        {
-            double inv_ssim = 1 - pic_out->prop.f_ssim;
-            double ssim_db;
-            if( inv_ssim <= 0.0000000001 )
-                ssim_db = 100;
-            ssim_db = -10.0 * log10(inv_ssim);
-
-            fprintf( opt->csvfh, "%.5f, %5.3f, ",
-                     pic_out->prop.f_ssim,
-                     ssim_db );
-        }
-        else
-            fputs( "-, -, ", opt->csvfh );
-
-        fprintf( opt->csvfh, "%2.8f,",
-                 pic_out->prop.f_crf_avg );
-
-        int mbCount = 0;
-        for( int i = 0; i < X264_MBTYPE_MAX; i++ )
-        {
-            fprintf( opt->csvfh, "%d,",
-                     h->stat.frame.i_mb_count[i] );
-            mbCount += h->stat.frame.i_mb_count[i];
-        }
-        fprintf( opt->csvfh, "%d, %d, %d",
-                 mbCount,
-                 h->mb.i_mb_luma_satd / mbCount,
-                 h->mb.i_mb_chroma_satd / mbCount);
-        h->mb.i_mb_luma_satd = h->mb.i_mb_chroma_satd = 0;
-
-        fputs( "\n", opt->csvfh );
-    }
 }
 
 static int encode( x264_param_t *param, cli_opt_t *opt )
