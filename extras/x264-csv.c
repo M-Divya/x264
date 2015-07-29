@@ -3,7 +3,8 @@
 *****************************************************************************
 * Copyright (C) 2003-2015 x264 project
 *
-* Authors: 
+* Authors: Gopu Govindaswamy <gopu@multicorewareinc.com>
+*          Divya Manivannan <divya@multicorewareinc.com>
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
