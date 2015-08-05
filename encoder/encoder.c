@@ -3333,8 +3333,11 @@ int     x264_encoder_encode( x264_t *h,
     if( !h->frames.current[0] )
         x264_lookahead_get_frames( h );
 
-    if( !h->frames.current[0] && x264_lookahead_is_empty( h ) )
-        return x264_encoder_frame_end( thread_oldest, thread_current, pp_nal, pi_nal, pic_out );
+    if (!h->frames.current[0] && x264_lookahead_is_empty(h))
+    {
+        thread_current->b_unused = 1;
+        return x264_encoder_frame_end(thread_oldest, thread_current, pp_nal, pi_nal, pic_out);
+    }
 
     /* ------------------- Get frame to be encoded ------------------------- */
     /* 4: get picture to encode */

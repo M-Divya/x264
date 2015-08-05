@@ -526,6 +526,7 @@ struct x264_t
     int             i_frame;
     int             i_frame_num;
 
+    int             b_unused;        /* In multi-threading, extra frames are set by this flag */
     int             i_thread_frames; /* Number of different frames being encoded by threads;
                                       * 1 when sliced-threads is on. */
     int             i_nal_type;

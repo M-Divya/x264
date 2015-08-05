@@ -93,7 +93,7 @@ void write_framelog_to_csvfile(const x264_t *ht, FILE* csvfh, const x264_picture
     x264_t *h;
     for (i = 0; i < ht->i_thread_frames; i++)
     {
-        if (pic_out->poc == ht->thread[i]->fdec->i_poc)
+        if (pic_out->poc == ht->thread[i]->fdec->i_poc && !ht->thread[i]->b_unused)
         {
             h = ht->thread[i];
             break;

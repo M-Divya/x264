@@ -3856,14 +3856,14 @@ skip_analysis:
         if( analysis.i_satd_i4x4 < COST_MAX )
             h->mb.i_mb_luma_satd += analysis.i_satd_i4x4 - analysis.i_satd_chroma;
         if( analysis.i_satd_chroma < COST_MAX )
-            h->mb.i_mb_chroma_satd = analysis.i_satd_chroma;
+            h->mb.i_mb_chroma_satd += analysis.i_satd_chroma;
     }
     else
     {
         h->mb.i_mb_luma_satd += analysis.i_satd_i16x16;
         h->mb.i_mb_luma_satd += analysis.i_satd_i8x8;
         h->mb.i_mb_luma_satd += analysis.i_satd_i4x4;
-        h->mb.i_mb_chroma_satd = analysis.i_satd_chroma;
+        h->mb.i_mb_chroma_satd += analysis.i_satd_chroma;
     }
 }
 
