@@ -67,7 +67,10 @@ FILE * open_csvlog_file(const char *filename)
         " InterB SKIP mbCount,"
         " Total MB Count,"
         " AverageLumaDistortion,"
-        "AverageChromaDistortion \n";
+        " AverageChromaDistortion,"
+        " Average Luma Level,"
+        " Maximum Luma Level,"
+        " Minimum Luma Level \n";
 
     FILE *csvfh = NULL;
     csvfh = x264_fopen(filename, "r");
@@ -143,10 +146,13 @@ void write_framelog_to_csvfile(const x264_t *ht, FILE* csvfh, const x264_picture
                 h->stat.frame.i_mb_count[j]);
             mbCount += h->stat.frame.i_mb_count[j];
         }
-        fprintf(csvfh, "%d, %d, %d",
+        fprintf(csvfh, "%d, %d, %d, %.2lf, %u, %u",
             mbCount,
             h->mb.i_mb_luma_satd / mbCount,
-            h->mb.i_mb_chroma_satd / mbCount);
+            h->mb.i_mb_chroma_satd / mbCount,
+            h->mb.i_mb_luma_level / mbCount,
+            h->mb.i_mb_max_luma_level,
+            h->mb.i_mb_min_luma_level);
         h->mb.i_mb_luma_satd = h->mb.i_mb_chroma_satd = 0;
 
         fputs("\n", csvfh);

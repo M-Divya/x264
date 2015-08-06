@@ -2753,6 +2753,16 @@ static intptr_t x264_slice_write( x264_t *h )
 reencode:
         x264_macroblock_encode( h );
 
+        uint32_t mb_luma_level = 0, mb_no_of_pixels = 16 * 16;
+        for (uint32_t i = 0; i < mb_no_of_pixels; i++)
+        {
+            pixel p = h->mb.pic.p_fenc[0][i];
+            mb_luma_level += p;
+            h->mb.i_mb_max_luma_level = X264_MAX(p, h->mb.i_mb_max_luma_level);
+            h->mb.i_mb_min_luma_level = X264_MIN(p, h->mb.i_mb_min_luma_level);
+        }
+        h->mb.i_mb_luma_level += (double)(mb_luma_level) / mb_no_of_pixels;
+
         if( h->param.b_cabac )
         {
             if( mb_xy > h->sh.i_first_mb && !(SLICE_MBAFF && (i_mb_y&1)) )
