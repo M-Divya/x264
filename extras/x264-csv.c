@@ -29,7 +29,7 @@
 #include "x264-csv.h"
 #include "common/common.h"
 
-FILE * open_csvlog_file(const char *filename)
+FILE * open_csvlog_file( const char *filename )
 {
     static const char* CSVHeader =
         " EncodeOrder,"
@@ -73,88 +73,86 @@ FILE * open_csvlog_file(const char *filename)
         " Minimum Luma Level \n";
 
     FILE *csvfh = NULL;
-    csvfh = x264_fopen(filename, "r");
-    if (csvfh)
+    csvfh = x264_fopen( filename, "r" );
+    if ( csvfh )
     {
-        fclose(csvfh);
+        fclose( csvfh );
         /* file already exist re-open the file with append mode */
-        csvfh = x264_fopen(filename, "ab");
+        csvfh = x264_fopen( filename, "ab" );
     }
     else
     {
         /* open new csv file and write header */
-        csvfh = x264_fopen(filename, "wb");
-        if (csvfh)
-            fprintf(csvfh, "%s%s", CSVHeader, MBHeader);
+        csvfh = x264_fopen( filename, "wb" );
+        if ( csvfh )
+            fprintf( csvfh, "%s%s", CSVHeader, MBHeader );
     }
     return csvfh;
 }
 
-void write_framelog_to_csvfile(const x264_t *ht, FILE* csvfh, const x264_picture_t *pic_out, int frame_size)
+void write_framelog_to_csvfile( const x264_t *ht, FILE* csvfh, const x264_picture_t *pic_out, int frame_size )
 {
     int i;
     x264_t *h;
-    for (i = 0; i < ht->i_thread_frames; i++)
+    for ( i = 0; i < ht->i_thread_frames; i++ )
     {
-        if (pic_out->poc == ht->thread[i]->fdec->i_poc && !ht->thread[i]->b_unused)
+        if ( pic_out->poc == ht->thread[i]->fdec->i_poc && !ht->thread[i]->b_unused )
         {
             h = ht->thread[i];
             break;
         }
     }
 
-    if (csvfh)
+    if ( csvfh )
     {
-        fprintf(csvfh, "%4d, %c, %3d, %.2f, %d, ",
-            h->i_frame,
-            h->sh.i_type == SLICE_TYPE_I ? 'I' : (h->sh.i_type == SLICE_TYPE_P ? 'P' : 'B'),
-            h->fdec->i_poc >> 1,
-            h->fdec->f_qp_avg_aq,
-            frame_size);
+        fprintf( csvfh, "%4d, %c, %3d, %.2f, %d, ",
+                 h->i_frame,
+                 h->sh.i_type == SLICE_TYPE_I ? 'I' : ( h->sh.i_type == SLICE_TYPE_P ? 'P' : 'B' ),
+                 h->fdec->i_poc >> 1,
+                 h->fdec->f_qp_avg_aq,
+                 frame_size );
         /* if psnr enabled */
-        if (h->param.analyse.b_psnr)
-            fprintf(csvfh, "%5.2f, %5.2f, %5.2f, %5.2f, ",
-            pic_out->prop.f_psnr[0],
-            pic_out->prop.f_psnr[1],
-            pic_out->prop.f_psnr[2],
-            pic_out->prop.f_psnr_avg);
+        if ( h->param.analyse.b_psnr )
+            fprintf( csvfh, "%5.2f, %5.2f, %5.2f, %5.2f, ",
+                     pic_out->prop.f_psnr[0],
+                     pic_out->prop.f_psnr[1],
+                     pic_out->prop.f_psnr[2],
+                     pic_out->prop.f_psnr_avg );
         else
-            fputs("-, -, -, -, ", csvfh);
+            fputs( "-, -, -, -, ", csvfh );
         /* if ssim enabled */
-        if (h->param.analyse.b_ssim)
+        if ( h->param.analyse.b_ssim )
         {
             double inv_ssim = 1 - pic_out->prop.f_ssim;
             double ssim_db;
-            if (inv_ssim <= 0.0000000001)
+            if ( inv_ssim <= 0.0000000001 )
                 ssim_db = 100;
-            ssim_db = -10.0 * log10(inv_ssim);
+            ssim_db = -10.0 * log10( inv_ssim );
 
-            fprintf(csvfh, "%.5f, %5.3f, ",
-                pic_out->prop.f_ssim,
-                ssim_db);
+            fprintf( csvfh, "%.5f, %5.3f, ",
+                     pic_out->prop.f_ssim,
+                     ssim_db );
         }
         else
-            fputs("-, -, ", csvfh);
+            fputs( "-, -, ", csvfh );
 
-        fprintf(csvfh, "%2.8f,",
-            pic_out->prop.f_crf_avg);
+        fprintf( csvfh, "%2.8f,", pic_out->prop.f_crf_avg );
 
         int mbCount = 0;
-        for (int j = 0; j < X264_MBTYPE_MAX; j++)
+        for ( int j = 0; j < X264_MBTYPE_MAX; j++ )
         {
-            fprintf(csvfh, "%d,",
-                h->stat.frame.i_mb_count[j]);
+            fprintf( csvfh, "%d,", h->stat.frame.i_mb_count[j] );
             mbCount += h->stat.frame.i_mb_count[j];
         }
-        fprintf(csvfh, "%d, %d, %d, %.2lf, %u, %u",
-            mbCount,
-            h->mb.i_mb_luma_satd / mbCount,
-            h->mb.i_mb_chroma_satd / mbCount,
-            h->mb.i_mb_luma_level / mbCount,
-            h->mb.i_mb_max_luma_level,
-            h->mb.i_mb_min_luma_level);
+        fprintf( csvfh, "%d, %d, %d, %.2lf, %u, %u",
+                 mbCount,
+                 h->mb.i_mb_luma_satd / mbCount,
+                 h->mb.i_mb_chroma_satd / mbCount,
+                 h->mb.i_mb_luma_level / mbCount,
+                 h->mb.i_mb_max_luma_level,
+                 h->mb.i_mb_min_luma_level );
         h->mb.i_mb_luma_satd = h->mb.i_mb_chroma_satd = 0;
 
-        fputs("\n", csvfh);
+        fputs( "\n", csvfh );
     }
 }

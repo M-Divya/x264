@@ -31,20 +31,14 @@
 #include "stdio.h"
 #include <stdint.h>
 
-#if _WIN32
-#define LIBAPI __declspec(dllexport)
-#else
-#define LIBAPI
-#endif
-
 /* Open a CSV log file. On success it returns a file handle which must be passed
  * to write_framelog_to_csvfile(). The file handle must be closed by the caller using
  * fclose(). If level is less than info, then no frame logging header is written to the
  * file. This function will return NULL if it is unable to open the file for write */
-LIBAPI FILE *open_csvlog_file(const char *filename);
+FILE *open_csvlog_file( const char *filename );
 
 /* Log frame statistics to the CSV file handle. If level is less than info, then no
  * frame logging is written to the file. */
-LIBAPI void write_framelog_to_csvfile(const x264_t *h, FILE* csvfh, const x264_picture_t *pic_out, int frame_size);
+void write_framelog_to_csvfile( const x264_t *h, FILE* csvfh, const x264_picture_t *pic_out, int frame_size );
 
 #endif
