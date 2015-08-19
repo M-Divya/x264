@@ -32,6 +32,8 @@
 #include "ratecontrol.h"
 #include "macroblock.h"
 #include "me.h"
+#include "extras/x264-csv.h"
+
 #if HAVE_INTEL_DISPATCHER
 #include "extras/intel_dispatcher.h"
 #endif
@@ -1429,6 +1431,16 @@ x264_t *x264_encoder_open( x264_param_t *param )
 
     if( x264_validate_parameters( h, 1 ) < 0 )
         goto fail;
+
+    if( h->param.csv_filename )
+    {
+        h->csvfh = x264_csvlog_open( &h->param, h->param.csv_filename, h->param.i_csv_log_level );
+        if( !h->csvfh )
+        {
+            x264_log( h, X264_LOG_ERROR, "Unable to open CSV log file <%s>, aborting\n", h->param.csv_filename );
+            goto fail;
+        }
+    }
 
     if( h->param.psz_cqm_file )
         if( x264_cqm_parse_file( h, h->param.psz_cqm_file ) < 0 )
@@ -3223,7 +3235,7 @@ int     x264_encoder_encode( x264_t *h,
                              x264_picture_t *pic_out )
 {
     x264_t *thread_current, *thread_prev, *thread_oldest;
-    int i_nal_type, i_nal_ref_idc, i_global_qp;
+    int i_nal_type, i_nal_ref_idc, i_global_qp, i_frame_size;
     int overhead = NALU_OVERHEAD;
 
 #if HAVE_OPENCL
@@ -3343,11 +3355,8 @@ int     x264_encoder_encode( x264_t *h,
     if( !h->frames.current[0] )
         x264_lookahead_get_frames( h );
 
-    if (!h->frames.current[0] && x264_lookahead_is_empty(h))
-    {
-        thread_current->b_unused = 1;
-        return x264_encoder_frame_end(thread_oldest, thread_current, pp_nal, pi_nal, pic_out);
-    }
+    if( !h->frames.current[0] && x264_lookahead_is_empty(h) )
+        goto csv_write;
 
     /* ------------------- Get frame to be encoded ------------------------- */
     /* 4: get picture to encode */
@@ -3762,7 +3771,37 @@ int     x264_encoder_encode( x264_t *h,
         if( (intptr_t)x264_slices_write( h ) )
             return -1;
 
-    return x264_encoder_frame_end( thread_oldest, thread_current, pp_nal, pi_nal, pic_out );
+csv_write:
+    i_frame_size = x264_encoder_frame_end( thread_oldest, thread_current, pp_nal, pi_nal, pic_out );
+    if( i_frame_size && thread_oldest->param.i_csv_log_level )
+    {
+        pic_out->frameData.frame_size = i_frame_size;
+        pic_out->frameData.i_poc = thread_oldest->fdec->i_poc >> 1;
+        pic_out->frameData.i_type = thread_oldest->sh.i_type;
+        pic_out->frameData.i_frame = thread_oldest->i_frame;
+        pic_out->frameData.f_qp_avg_aq = thread_oldest->fdec->f_qp_avg_aq;
+        if( thread_oldest->param.analyse.b_psnr )
+        {
+            pic_out->frameData.f_psnr_y = pic_out->prop.f_psnr[0];
+            pic_out->frameData.f_psnr_u = pic_out->prop.f_psnr[1];
+            pic_out->frameData.f_psnr_v = pic_out->prop.f_psnr[2];
+            pic_out->frameData.f_psnr = pic_out->prop.f_psnr_avg;
+        }
+        if( thread_oldest->param.analyse.b_ssim )
+            pic_out->frameData.f_ssim = pic_out->prop.f_ssim;
+        if( thread_oldest->param.rc.i_rc_method == X264_RC_CRF )
+            pic_out->frameData.f_crf_avg = pic_out->prop.f_crf_avg;
+        memcpy( &(pic_out->frameData.i_mb_count), &(thread_oldest->stat.frame.i_mb_count), sizeof(thread_oldest->stat.frame.i_mb_count) );
+        pic_out->frameData.f_luma_satd = thread_oldest->mb.i_mb_luma_satd;
+        pic_out->frameData.f_chroma_satd = thread_oldest->mb.i_mb_chroma_satd;
+        pic_out->frameData.f_luma_level = thread_oldest->mb.i_mb_luma_level;
+        pic_out->frameData.f_max_luma_level = thread_oldest->mb.i_mb_max_luma_level;
+        pic_out->frameData.f_min_luma_level = thread_oldest->mb.i_mb_min_luma_level;
+
+        x264_csvlog_frame( thread_oldest->csvfh, &thread_oldest->param, pic_out, thread_oldest->param.i_csv_log_level );
+    }
+
+    return i_frame_size;
 }
 
 static int x264_encoder_frame_end( x264_t *h, x264_t *thread_current,
@@ -4354,6 +4393,10 @@ void    x264_encoder_close  ( x264_t *h )
         free( h->param.rc.psz_stat_out );
     if( h->param.rc.psz_stat_in )
         free( h->param.rc.psz_stat_in );
+    if( h->param.csv_filename )
+        free( (char*)h->param.csv_filename );
+    if( h->csvfh )
+        fclose( h->csvfh );
 
     x264_cqm_delete( h );
     x264_free( h->nal_buffer );

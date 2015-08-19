@@ -127,6 +127,8 @@ void x264_param_default( x264_param_t *param )
     param->pf_log = x264_log_default;
     param->p_log_private = NULL;
     param->i_log_level = X264_LOG_INFO;
+    param->i_csv_log_level = 0;
+    param->csv_filename = NULL;
 
     /* */
     param->analyse.intra = X264_ANALYSE_I4x4 | X264_ANALYSE_I8x8;
@@ -887,6 +889,10 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
     }
     OPT("log")
         p->i_log_level = atoi(value);
+    OPT("csv-log-level")
+        p->i_csv_log_level = atoi(value);
+    OPT("csv")
+        p->csv_filename = strdup(value);
     OPT("dump-yuv")
         p->psz_dump_yuv = strdup(value);
     OPT2("analyse", "partitions")

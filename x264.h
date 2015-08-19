@@ -355,8 +355,10 @@ typedef struct x264_param_t
     void        (*pf_log)( void *, int i_level, const char *psz, va_list );
     void        *p_log_private;
     int         i_log_level;
+    int         i_csv_log_level; /* Level of csv logging. */
     int         b_full_recon;   /* fully reconstruct frames, even when not necessary for encoding.  Implied by psz_dump_yuv */
     char        *psz_dump_yuv;  /* filename (in UTF-8) for reconstructed frames */
+    const char* csv_filename;   /* filename of CSV log. */
 
     /* Encoder analyser parameters */
     struct

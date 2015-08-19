@@ -490,6 +490,7 @@ struct x264_t
     /* encoder parameters */
     x264_param_t    param;
 
+    FILE            *csvfh;
     x264_t          *thread[X264_THREAD_MAX+1];
     x264_t          *lookahead_thread[X264_LOOKAHEAD_THREAD_MAX];
     int             b_thread_active;
@@ -526,7 +527,6 @@ struct x264_t
     int             i_frame;
     int             i_frame_num;
 
-    int             b_unused;        /* In multi-threading, extra frames are set by this flag */
     int             i_thread_frames; /* Number of different frames being encoded by threads;
                                       * 1 when sliced-threads is on. */
     int             i_nal_type;

@@ -42,7 +42,6 @@
 #include <getopt.h>
 #include "common/common.h"
 #include "x264cli.h"
-#include "extras/x264-csv.h"
 #include "input/input.h"
 #include "output/output.h"
 #include "filters/filters.h"
@@ -151,14 +150,12 @@ static void sigint_handler( int a )
 typedef struct {
     int b_progress;
     int i_seek;
-    int csv_log_level;
     hnd_t hin;
     hnd_t hout;
     FILE *qpfile;
     FILE *tcfile_out;
     double timebase_convert_multiplier;
     int i_pulldown;
-    FILE *csvfh;
 } cli_opt_t;
 
 /* file i/o operation structs */
@@ -396,8 +393,6 @@ int main( int argc, char **argv )
         fclose( opt.tcfile_out );
     if( opt.qpfile )
         fclose( opt.qpfile );
-    if( opt.csvfh )
-        fclose( opt.csvfh );
 
 #ifdef _WIN32
     SetConsoleTitleW( org_console_title );
@@ -982,9 +977,7 @@ typedef enum
     OPT_DTS_COMPRESSION,
     OPT_OUTPUT_CSP,
     OPT_INPUT_RANGE,
-    OPT_RANGE,
-    OPT_CSVFILE,
-    OPT_CSV_LOG_LEVEL
+    OPT_RANGE
 } OptionsOPT;
 
 static char short_options[] = "8A:B:b:f:hI:i:m:o:p:q:r:t:Vvw";
@@ -1153,8 +1146,8 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
-    { "csv",         required_argument, NULL, OPT_CSVFILE },
-    { "csv-log-level", required_argument, NULL, OPT_CSV_LOG_LEVEL },
+    { "csv",         required_argument, NULL, 0 },
+    { "csv-log-level", required_argument, NULL, 0 },
     {0, 0, 0, 0}
 };
 
@@ -1361,7 +1354,6 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
     char *input_filename = NULL;
     const char *demuxer = demuxer_names[0];
     char *output_filename = NULL;
-    char *csv_filename = NULL;
     const char *muxer = muxer_names[0];
     char *tcfile_name = NULL;
     x264_param_t defaults;
@@ -1461,12 +1453,6 @@ static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
                     fclose( opt->qpfile );
                     return -1;
                 }
-                break;
-            case OPT_CSVFILE:
-                csv_filename = optarg;
-                break;
-            case OPT_CSV_LOG_LEVEL:
-                opt->csv_log_level = atoi( optarg );
                 break;
             case OPT_THREAD_INPUT:
                 b_thread_input = 1;
@@ -1754,14 +1740,6 @@ generic_option:
             }
     }
 
-    if ( csv_filename )
-    {
-        opt->csvfh = x264_csvlog_open( param, csv_filename, opt->csv_log_level );
-        FAIL_IF_ERROR( !opt->csvfh, "can't open csvlog file `%s'\n", csv_filename );
-    }
-    else
-        opt->csvfh = NULL;
-
     return 0;
 }
 
@@ -1818,43 +1796,6 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     {
         i_frame_size = cli_output.write_frame( hout, nal[0].p_payload, i_frame_size, &pic_out );
         *last_dts = pic_out.i_dts;
-    }
-
-    if ( i_frame_size && opt->csv_log_level )
-    {
-        x264_t *ht;
-        for ( int i = 0; i < h->i_thread_frames; i++ )
-        {
-            if ( pic_out.poc == h->thread[i]->fdec->i_poc && !h->thread[i]->b_unused )
-            {
-                ht = h->thread[i];
-                break;
-            }
-        }
-        pic_out.frameData.frame_size = i_frame_size;
-        pic_out.frameData.i_poc = ht->fdec->i_poc >> 1;
-        pic_out.frameData.i_type = ht->sh.i_type;
-        pic_out.frameData.i_frame = ht->i_frame;
-        pic_out.frameData.f_qp_avg_aq = ht->fdec->f_qp_avg_aq;
-        if ( h->param.analyse.b_psnr )
-        {
-            pic_out.frameData.f_psnr_y = pic_out.prop.f_psnr[0];
-            pic_out.frameData.f_psnr_u = pic_out.prop.f_psnr[1];
-            pic_out.frameData.f_psnr_v = pic_out.prop.f_psnr[2];
-            pic_out.frameData.f_psnr = pic_out.prop.f_psnr_avg;
-        }
-        if ( h->param.analyse.b_ssim )
-            pic_out.frameData.f_ssim = pic_out.prop.f_ssim;
-        if ( h->param.rc.i_rc_method == X264_RC_CRF )
-            pic_out.frameData.f_crf_avg = pic_out.prop.f_crf_avg;
-        memcpy( &(pic_out.frameData.i_mb_count), &(ht->stat.frame.i_mb_count), sizeof(ht->stat.frame.i_mb_count) );
-        pic_out.frameData.f_luma_satd = ht->mb.i_mb_luma_satd;
-        pic_out.frameData.f_chroma_satd = ht->mb.i_mb_chroma_satd;
-        pic_out.frameData.f_luma_level = ht->mb.i_mb_luma_level;
-        pic_out.frameData.f_max_luma_level = ht->mb.i_mb_max_luma_level;
-        pic_out.frameData.f_min_luma_level = ht->mb.i_mb_min_luma_level;
-
-        x264_csvlog_frame( opt->csvfh, &ht->param, &pic_out, opt->csv_log_level );
     }
 
     return i_frame_size;
