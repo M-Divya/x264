@@ -789,6 +789,28 @@ typedef struct
     double f_crf_avg;
 } x264_image_properties_t;
 
+/* Frame level statistics */
+typedef struct
+{
+    double          f_psnr_y;
+    double          f_psnr_u;
+    double          f_psnr_v;
+    double          f_psnr;
+    double          f_ssim;
+    double          f_crf_avg;
+    double          f_luma_level;
+    uint64_t        f_luma_satd;
+    uint64_t        f_chroma_satd;
+    float           f_qp_avg_aq;
+    int             i_frame;
+    int             i_type;
+    int             i_poc;
+    int             frame_size;
+    int             i_mb_count[19];
+    uint16_t        f_max_luma_level;
+    uint16_t        f_min_luma_level;
+} x264_frame_stats_t;
+
 typedef struct
 {
     /* In: force picture type (if not auto)
@@ -833,6 +855,8 @@ typedef struct
     void *opaque;
     /* Ignored on input, set to picture count, returned on output */
 	int poc;
+    /* Frame level statistics */
+    x264_frame_stats_t frameData;
 } x264_picture_t;
 
 /* x264_picture_init:

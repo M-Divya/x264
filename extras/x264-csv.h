@@ -32,13 +32,13 @@
 #include <stdint.h>
 
 /* Open a CSV log file. On success it returns a file handle which must be passed
- * to write_framelog_to_csvfile(). The file handle must be closed by the caller using
- * fclose(). If level is less than info, then no frame logging header is written to the
+ * to x264_csvlog_frame(). The file handle must be closed by the caller using
+ * fclose(). If csv log level is 0, then no frame logging header is written to the
  * file. This function will return NULL if it is unable to open the file for write */
-FILE *open_csvlog_file( const char *filename );
+FILE *x264_csvlog_open( const x264_param_t* param, const char* filename, int level );
 
-/* Log frame statistics to the CSV file handle. If level is less than info, then no
+/* Log frame statistics to the CSV file handle. If csv log level is 0, then no
  * frame logging is written to the file. */
-void write_framelog_to_csvfile( const x264_t *h, FILE* csvfh, const x264_picture_t *pic_out, int frame_size );
+void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_picture_t* pic, int level );
 
 #endif
