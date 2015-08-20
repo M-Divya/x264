@@ -707,6 +707,27 @@ typedef struct x264_hrd_t
     double dpb_output_time;
 } x264_hrd_t;
 
+/* Output statistics from encoder */
+typedef struct x264_stats_t
+{
+    double  f_frame_qp[3];
+    double  f_frame_size[3];
+    double  f_psnr_mean_y[3];
+    double  f_psnr_mean_u[3];
+    double  f_psnr_mean_v[3];
+    double  f_ssim_mean_y[3];
+    double  f_global_psnr_y;
+    double  f_global_psnr_u;
+    double  f_global_psnr_v;
+    double  f_global_psnr;
+    double  f_global_ssim;
+    double  f_global_ssim_db;
+    double  f_bitrate;
+    double  f_encode_time;
+    double  f_fps;
+    int     i_frame_count[3];
+} x264_stats_t;
+
 /* Arbitrary user SEI:
  * Payload size is in bytes and the payload pointer must be valid.
  * Payload types and syntax can be found in Annex D of the H.264 Specification.
@@ -931,6 +952,10 @@ int     x264_encoder_headers( x264_t *, x264_nal_t **pp_nal, int *pi_nal );
  *      returns negative on error and zero if no NAL units returned.
  *      the payloads of all output NALs are guaranteed to be sequential in memory. */
 int     x264_encoder_encode( x264_t *, x264_nal_t **pp_nal, int *pi_nal, x264_picture_t *pic_in, x264_picture_t *pic_out );
+/* x264_encoder_log:
+ *      write a line to the configured CSV file.  If a CSV filename was not
+ *      configured, or file open failed, this function will perform no write. */
+void    x264_encoder_log( x264_t *, int argc, char **argv );
 /* x264_encoder_close:
  *      close an encoder handler */
 void    x264_encoder_close  ( x264_t * );

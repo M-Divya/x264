@@ -28,6 +28,14 @@
 #include "x264.h"
 #include "x264-csv.h"
 #include "common/common.h"
+#include <time.h>
+
+static const char* summaryCSVHeader =
+    "Command, Date/Time, Elapsed Time, FPS, Bitrate, "
+    "Y PSNR, U PSNR, V PSNR, Global PSNR, SSIM, SSIM (dB), "
+    "I count, I ave-QP, I kbps, I-PSNR Y, I-PSNR U, I-PSNR V, I-SSIM (dB), "
+    "P count, P ave-QP, P kbps, P-PSNR Y, P-PSNR U, P-PSNR V, P-SSIM (dB), "
+    "B count, B ave-QP, B kbps, B-PSNR Y, B-PSNR U, B-PSNR V, B-SSIM (dB)\n";
 
 FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int level )
 {
@@ -97,6 +105,8 @@ FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int le
                     fprintf( csvfh, "%s", SSIMHeader );
                 fprintf( csvfh, "%s", MBHeader );
             }
+            else
+                fputs( summaryCSVHeader, csvfh );
         }
     }
     return csvfh;
@@ -151,4 +161,66 @@ void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_pictu
 
         fputs( "\n", csvfh );
     }
+}
+
+void x264_csvlog_encode( FILE* csvfh, const x264_param_t* param, const x264_stats_t* stats, int level, int argc, char** argv )
+{
+    if( !csvfh )
+        return;
+
+    if( level )
+    {
+        // adding summary to a per-frame csv log file, so it needs a summary header
+        fprintf( csvfh, "\nSummary\n" );
+        fputs( summaryCSVHeader, csvfh );
+    }
+
+    // CLI arguments or other
+    for( int i = 1; i < argc; i++ )
+    {
+        if( i ) fputc( ' ', csvfh );
+        fputs( argv[i], csvfh );
+    }
+
+    // current date and time
+    time_t now;
+    struct tm* timeinfo;
+    time( &now );
+    timeinfo = localtime( &now );
+    char buffer[200];
+    strftime( buffer, 128, "%c", timeinfo );
+    fprintf( csvfh, ", %s, ", buffer );
+
+    // elapsed time, fps, bitrate
+    fprintf( csvfh, "%.2f, %.2f, %.2f,",
+             stats->f_encode_time, stats->f_fps, stats->f_bitrate );
+
+    if( param->analyse.b_psnr )
+        fprintf( csvfh, " %.3lf, %.3lf, %.3lf, %.3lf,",
+                 stats->f_global_psnr_y, stats->f_global_psnr_u, stats->f_global_psnr_v, stats->f_global_psnr );
+    else
+        fprintf( csvfh, " -, -, -, -," );
+    if( param->analyse.b_ssim )
+        fprintf( csvfh, " %.6f, %6.3f,", stats->f_global_ssim, stats->f_global_ssim_db );
+    else
+        fprintf( csvfh, " -, -," );
+
+    for( int i = 0; i < 3; i++ )
+    {
+        if( stats->i_frame_count[i] )
+        {
+            fprintf( csvfh, " %-6u, %2.2lf, %-8.2lf,", stats->i_frame_count[i], stats->f_frame_qp[i], stats->f_frame_size[i] );
+            if( param->analyse.b_psnr )
+                fprintf( csvfh, " %.3lf, %.3lf, %.3lf,", stats->f_psnr_mean_y[i], stats->f_psnr_mean_u[i], stats->f_psnr_mean_v[i] );
+            else
+                fprintf( csvfh, " -, -, -," );
+            if( param->analyse.b_ssim )
+                fprintf( csvfh, " %.3lf,", stats->f_ssim_mean_y[i] );
+            else
+                fprintf( csvfh, " -," );
+        }
+        else
+            fprintf( csvfh, " -, -, -, -, -, -, -," );
+    }
+    fputs( "\n", csvfh );
 }

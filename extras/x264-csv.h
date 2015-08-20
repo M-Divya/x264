@@ -41,4 +41,9 @@ FILE *x264_csvlog_open( const x264_param_t* param, const char* filename, int lev
  * frame logging is written to the file. */
 void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_picture_t* pic, int level );
 
+/* Log final encode statistics to the CSV file handle. 'argc' and 'argv' are
+ * intended to be command line arguments passed to the encoder. Encode
+ * statistics should be queried from the encoder just prior to closing it. */
+void x264_csvlog_encode( FILE* csvfh, const x264_param_t* param, const x264_stats_t* stats, int level, int argc, char** argv );
+
 #endif

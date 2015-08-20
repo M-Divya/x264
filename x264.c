@@ -262,7 +262,7 @@ static const float pulldown_frame_duration[10] = { 0.0, 1, 0.5, 0.5, 1, 1, 1.5, 
 
 static void help( x264_param_t *defaults, int longhelp );
 static int  parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt );
-static int  encode( x264_param_t *param, cli_opt_t *opt );
+static int  encode( x264_param_t *param, cli_opt_t *opt, int argc, char **argv );
 
 /* logging and printing for within the cli system */
 static int cli_log_level;
@@ -380,7 +380,7 @@ int main( int argc, char **argv )
     signal( SIGINT, sigint_handler );
 
     if( !ret )
-        ret = encode( &param, &opt );
+        ret = encode( &param, &opt, argc, argv );
 
     /* clean up handles */
     if( filter.free )
@@ -1846,7 +1846,7 @@ if( cond )\
     goto fail;\
 }
 
-static int encode( x264_param_t *param, cli_opt_t *opt )
+static int encode( x264_param_t *param, cli_opt_t *opt, int argc, char **argv )
 {
     x264_t *h = NULL;
     x264_picture_t pic;
@@ -2005,9 +2005,13 @@ fail:
         duration = (double)(2 * largest_pts - second_largest_pts) * param->i_timebase_num / param->i_timebase_den;
 
     i_end = x264_mdate();
+    if( i_frame_output > 0 )
+        h->stat.f_encode_time = ( double )( i_end - i_start ) / 1000000;
     /* Erase progress indicator before printing encoding stats. */
     if( opt->b_progress )
         fprintf( stderr, "                                                                               \r" );
+    if( h->param.csv_filename && !b_ctrl_c )
+        x264_encoder_log( h, argc, argv );
     if( h )
         x264_encoder_close( h );
     fprintf( stderr, "\n" );

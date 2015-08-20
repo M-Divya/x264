@@ -4460,6 +4460,64 @@ void    x264_encoder_close  ( x264_t *h )
 #endif
 }
 
+static void fetch_stats( x264_t *h, x264_stats_t *stats, size_t statsSizeBytes )
+{
+    if( statsSizeBytes >= sizeof( stats ) )
+    {
+        for( int i = 0; i < 3; i++ )
+        {
+            static const uint8_t slice_order[] = { SLICE_TYPE_I, SLICE_TYPE_P, SLICE_TYPE_B };
+            int i_slice = slice_order[i];
+            int i_count = h->stat.i_frame_count[i_slice];
+            double dur = h->stat.f_frame_duration[i_slice];
+            stats->i_frame_count[i] = i_count;
+            stats->f_frame_qp[i] = h->stat.f_frame_qp[i_slice] / i_count;
+            stats->f_frame_size[i] = ( double )h->stat.i_frame_size[i_slice] / i_count;
+            if( h->param.analyse.b_psnr )
+            {
+                stats->f_psnr_mean_y[i] = h->stat.f_psnr_mean_y[i_slice] / dur;
+                stats->f_psnr_mean_u[i] = h->stat.f_psnr_mean_u[i_slice] / dur;
+                stats->f_psnr_mean_v[i] = h->stat.f_psnr_mean_v[i_slice] / dur;
+            }
+            if( h->param.analyse.b_ssim )
+                stats->f_ssim_mean_y[i] = x264_ssim( h->stat.f_ssim_mean_y[i_slice] / dur );
+        }
+        const double duration = h->stat.f_frame_duration[SLICE_TYPE_I] +
+                                h->stat.f_frame_duration[SLICE_TYPE_P] +
+                                h->stat.f_frame_duration[SLICE_TYPE_B];
+        float f_bitrate = SUM3( h->stat.i_frame_size ) / duration / 125;
+        int64_t i_yuv_size = FRAME_SIZE( h->param.i_width * h->param.i_height );
+        if( h->param.analyse.b_ssim )
+        {
+            stats->f_global_ssim = SUM3( h->stat.f_ssim_mean_y ) / duration;;
+            stats->f_global_ssim_db = x264_ssim( stats->f_global_ssim );
+        }
+        if( h->param.analyse.b_psnr )
+        {
+            stats->f_global_psnr_y = SUM3( h->stat.f_psnr_mean_y ) / duration;
+            stats->f_global_psnr_u = SUM3( h->stat.f_psnr_mean_u ) / duration;
+            stats->f_global_psnr_v = SUM3( h->stat.f_psnr_mean_v ) / duration;
+            stats->f_global_psnr = x264_psnr( SUM3( h->stat.f_ssd_global ), duration * i_yuv_size );
+        }
+        stats->f_bitrate = f_bitrate;
+        stats->f_encode_time = h->stat.f_encode_time;
+        stats->f_fps = ( double )( SUM3( h->stat.i_frame_count ) ) / h->stat.f_encode_time;
+    }
+}
+
+/****************************************************************************
+* x264_encoder_log:
+****************************************************************************/
+void    x264_encoder_log( x264_t *h, int argc, char **argv )
+{
+    if ( h )
+    {
+        x264_stats_t stats;
+        fetch_stats( h, &stats, sizeof( stats ) );
+        x264_csvlog_encode( h->csvfh, &h->param, &stats, h->param.i_csv_log_level, argc, argv );
+    }
+}
+
 int x264_encoder_delayed_frames( x264_t *h )
 {
     int delayed_frames = 0;

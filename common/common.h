@@ -909,6 +909,7 @@ struct x264_t
         int     i_frame_count[3];
         int64_t i_frame_size[3];
         double  f_frame_qp[3];
+        double  f_encode_time;
         int     i_consecutive_bframes[X264_BFRAME_MAX+1];
         /* */
         double  f_ssd_global[3];
