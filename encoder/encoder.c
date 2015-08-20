@@ -93,22 +93,24 @@ static void x264_frame_dump( x264_t *h )
 
     /* Write the frame in display order */
     int frame_size = FRAME_SIZE( h->param.i_height * h->param.i_width * sizeof(pixel) );
-    fseek( f, (uint64_t)h->fdec->i_frame * frame_size, SEEK_SET );
-    for( int p = 0; p < (CHROMA444 ? 3 : 1); p++ )
-        for( int y = 0; y < h->param.i_height; y++ )
-            fwrite( &h->fdec->plane[p][y*h->fdec->i_stride[p]], sizeof(pixel), h->param.i_width, f );
-    if( !CHROMA444 )
+    if( !fseek( f, (int64_t)h->fdec->i_frame * frame_size, SEEK_SET ) )
     {
-        int cw = h->param.i_width>>1;
-        int ch = h->param.i_height>>CHROMA_V_SHIFT;
-        pixel *planeu = x264_malloc( (cw*ch*2+32)*sizeof(pixel) );
-        if( planeu )
+        for( int p = 0; p < (CHROMA444 ? 3 : 1); p++ )
+            for( int y = 0; y < h->param.i_height; y++ )
+                fwrite( &h->fdec->plane[p][y*h->fdec->i_stride[p]], sizeof(pixel), h->param.i_width, f );
+        if( !CHROMA444 )
         {
-            pixel *planev = planeu + cw*ch + 16;
-            h->mc.plane_copy_deinterleave( planeu, cw, planev, cw, h->fdec->plane[1], h->fdec->i_stride[1], cw, ch );
-            fwrite( planeu, 1, cw*ch*sizeof(pixel), f );
-            fwrite( planev, 1, cw*ch*sizeof(pixel), f );
-            x264_free( planeu );
+            int cw = h->param.i_width>>1;
+            int ch = h->param.i_height>>CHROMA_V_SHIFT;
+            pixel *planeu = x264_malloc( (cw*ch*2+32)*sizeof(pixel) );
+            if( planeu )
+            {
+                pixel *planev = planeu + cw*ch + 16;
+                h->mc.plane_copy_deinterleave( planeu, cw, planev, cw, h->fdec->plane[1], h->fdec->i_stride[1], cw, ch );
+                fwrite( planeu, 1, cw*ch*sizeof(pixel), f );
+                fwrite( planev, 1, cw*ch*sizeof(pixel), f );
+                x264_free( planeu );
+            }
         }
     }
     fclose( f );
@@ -1010,9 +1012,9 @@ static int x264_validate_parameters( x264_t *h, int b_open )
         h->param.i_fps_num = 25;
         h->param.i_fps_den = 1;
     }
-    float fps = (float) h->param.i_fps_num / h->param.i_fps_den;
+    float fps = (float)h->param.i_fps_num / h->param.i_fps_den;
     if( h->param.i_keyint_min == X264_KEYINT_MIN_AUTO )
-        h->param.i_keyint_min = X264_MIN( h->param.i_keyint_max / 10, fps );
+        h->param.i_keyint_min = X264_MIN( h->param.i_keyint_max / 10, (int)fps );
     h->param.i_keyint_min = x264_clip3( h->param.i_keyint_min, 1, h->param.i_keyint_max/2+1 );
     h->param.rc.i_lookahead = x264_clip3( h->param.rc.i_lookahead, 0, X264_LOOKAHEAD_MAX );
     {
@@ -3063,9 +3065,8 @@ static void x264_thread_sync_context( x264_t *dst, x264_t *src )
 
 static void x264_thread_sync_stat( x264_t *dst, x264_t *src )
 {
-    if( dst == src )
-        return;
-    memcpy( &dst->stat.i_frame_count, &src->stat.i_frame_count, sizeof(dst->stat) - sizeof(dst->stat.frame) );
+    if( dst != src )
+        memcpy( &dst->stat, &src->stat, offsetof(x264_t, stat.frame) - offsetof(x264_t, stat) );
 }
 
 static void *x264_slices_write( x264_t *h )
