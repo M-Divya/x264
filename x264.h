@@ -826,7 +826,7 @@ typedef struct x264_frame_stats_t
     double          f_psnr;
     double          f_ssim;
     double          f_crf_avg;
-    double          f_luma_level;
+    double          f_avg_luma_level;
     uint64_t        f_luma_satd;
     uint64_t        f_chroma_satd;
     float           f_qp_avg_aq;
@@ -835,8 +835,8 @@ typedef struct x264_frame_stats_t
     int             i_poc;
     int             frame_size;
     int             i_mb_count[19];
-    uint16_t        f_max_luma_level;
-    uint16_t        f_min_luma_level;
+    uint16_t        i_max_luma_level;
+    uint16_t        i_min_luma_level;
 } x264_frame_stats_t;
 
 typedef struct x264_picture_t

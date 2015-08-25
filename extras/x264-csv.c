@@ -155,9 +155,9 @@ void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_pictu
                  mbCount,
                  ( double )( pic->frameData.f_luma_satd ) / mbCount,
                  ( double )( pic->frameData.f_chroma_satd ) / mbCount,
-                 pic->frameData.f_luma_level / mbCount,
-                 pic->frameData.f_max_luma_level,
-                 pic->frameData.f_min_luma_level );
+                 pic->frameData.f_avg_luma_level,
+                 pic->frameData.i_max_luma_level,
+                 pic->frameData.i_min_luma_level );
 
         fputs( "\n", csvfh );
     }

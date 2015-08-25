@@ -2767,16 +2767,6 @@ static intptr_t x264_slice_write( x264_t *h )
 reencode:
         x264_macroblock_encode( h );
 
-        uint32_t mb_luma_level = 0, mb_no_of_pixels = 16 * 16;
-        for (uint32_t i = 0; i < mb_no_of_pixels; i++)
-        {
-            pixel p = h->mb.pic.p_fenc[0][i];
-            mb_luma_level += p;
-            h->mb.i_mb_max_luma_level = X264_MAX(p, h->mb.i_mb_max_luma_level);
-            h->mb.i_mb_min_luma_level = X264_MIN(p, h->mb.i_mb_min_luma_level);
-        }
-        h->mb.i_mb_luma_level += (double)(mb_luma_level) / mb_no_of_pixels;
-
         if( h->param.b_cabac )
         {
             if( mb_xy > h->sh.i_first_mb && !(SLICE_MBAFF && (i_mb_y&1)) )
@@ -3276,11 +3266,27 @@ int     x264_encoder_encode( x264_t *h,
 
         /* 1: Copy the picture to a frame and move it to a buffer */
         x264_frame_t *fenc = x264_frame_pop_unused( h, 0 );
+        uint64_t sum_luma = 0;
+        pixel *luma = fenc->plane[0];
+        int stride = fenc->i_stride[0];
+
         if( !fenc )
             return -1;
 
         if( x264_frame_copy_picture( h, fenc, pic_in ) < 0 )
             return -1;
+
+        for( int r = 0; r < h->param.i_height; r++ )
+        {
+            for( int c = 0; c < h->param.i_width; c++ )
+            {
+                sum_luma += luma[c];
+                fenc->i_max_luma_level = X264_MAX( luma[c], fenc->i_max_luma_level );
+                fenc->i_min_luma_level = X264_MIN( luma[c], fenc->i_min_luma_level );
+            }
+            luma += stride;
+        }
+        fenc->f_avg_luma_level = ( double )( sum_luma ) / ( h->param.i_width * h->param.i_height );
 
         if( h->param.i_width != 16 * h->mb.i_mb_width ||
             h->param.i_height != 16 * h->mb.i_mb_height )
@@ -3795,9 +3801,9 @@ csv_write:
         memcpy( &(pic_out->frameData.i_mb_count), &(thread_oldest->stat.frame.i_mb_count), sizeof(thread_oldest->stat.frame.i_mb_count) );
         pic_out->frameData.f_luma_satd = thread_oldest->mb.i_mb_luma_satd;
         pic_out->frameData.f_chroma_satd = thread_oldest->mb.i_mb_chroma_satd;
-        pic_out->frameData.f_luma_level = thread_oldest->mb.i_mb_luma_level;
-        pic_out->frameData.f_max_luma_level = thread_oldest->mb.i_mb_max_luma_level;
-        pic_out->frameData.f_min_luma_level = thread_oldest->mb.i_mb_min_luma_level;
+        pic_out->frameData.f_avg_luma_level = thread_oldest->fenc->f_avg_luma_level;
+        pic_out->frameData.i_max_luma_level = thread_oldest->fenc->i_max_luma_level;
+        pic_out->frameData.i_min_luma_level = thread_oldest->fenc->i_min_luma_level;
 
         x264_csvlog_frame( thread_oldest->csvfh, &thread_oldest->param, pic_out, thread_oldest->param.i_csv_log_level );
     }

@@ -891,9 +891,6 @@ struct x264_t
 
         uint64_t i_mb_luma_satd;
         uint64_t i_mb_chroma_satd;
-        double   i_mb_luma_level;
-        pixel    i_mb_max_luma_level;
-        pixel    i_mb_min_luma_level;
 
     } mb;
 

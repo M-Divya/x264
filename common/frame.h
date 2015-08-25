@@ -175,6 +175,10 @@ typedef struct x264_frame
     uint8_t *mb_info;
     void (*mb_info_free)( void* );
 
+    double  f_avg_luma_level;
+    pixel   i_max_luma_level;
+    pixel   i_min_luma_level;
+
 #if HAVE_OPENCL
     x264_frame_opencl_t opencl;
 #endif
