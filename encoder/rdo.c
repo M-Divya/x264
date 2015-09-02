@@ -117,7 +117,7 @@ static ALWAYS_INLINE int cached_satd( x264_t *h, int size, int x, int y )
 /* Hadamard transform is recursive, so a SATD+SA8D can be done faster by taking advantage of this fact. */
 /* This optimization can also be used in non-RD transform decision. */
 
-static inline int ssd_plane( x264_t *h, int size, int p, int x, int y )
+static inline int ssd_plane( x264_t *h, int size, int p, int x, int y, int *ssd )
 {
     ALIGNED_16( static pixel zero[16] ) = {0};
     int satd = 0;
@@ -141,18 +141,20 @@ static inline int ssd_plane( x264_t *h, int size, int p, int x, int y )
         }
         satd = (satd * h->mb.i_psy_rd * h->mb.i_psy_rd_lambda + 128) >> 8;
     }
-    return h->pixf.ssd[size](fenc, FENC_STRIDE, fdec, FDEC_STRIDE) + satd;
+    *ssd = h->pixf.ssd[size]( fenc, FENC_STRIDE, fdec, FDEC_STRIDE );
+    return  *ssd + satd;
 }
 
-static inline int ssd_mb( x264_t *h )
+static inline int ssd_mb( x264_t *h, int *luma_ssd, int *chroma_ssd )
 {
+    int chroma_ssd_temp;
     int chroma_size = h->luma2chroma_pixel[PIXEL_16x16];
-    int chroma_ssd = ssd_plane(h, chroma_size, 1, 0, 0) + ssd_plane(h, chroma_size, 2, 0, 0);
-    chroma_ssd = ((uint64_t)chroma_ssd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
-    return ssd_plane(h, PIXEL_16x16, 0, 0, 0) + chroma_ssd;
+    chroma_ssd_temp = ssd_plane( h, chroma_size, 1, 0, 0, &chroma_ssd_temp ) + ssd_plane( h, chroma_size, 2, 0, 0, &chroma_ssd_temp );
+    *chroma_ssd = ((uint64_t)chroma_ssd_temp * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+    return ssd_plane( h, PIXEL_16x16, 0, 0, 0, luma_ssd ) + ( *chroma_ssd );
 }
 
-static int x264_rd_cost_mb( x264_t *h, int i_lambda2 )
+static int x264_rd_cost_mb( x264_t *h, int i_lambda2, int *luma_ssd, int *chroma_ssd )
 {
     int b_transform_bak = h->mb.b_transform_8x8;
     int i_ssd;
@@ -164,7 +166,7 @@ static int x264_rd_cost_mb( x264_t *h, int i_lambda2 )
     if( h->mb.b_deblock_rdo )
         x264_macroblock_deblock( h );
 
-    i_ssd = ssd_mb( h );
+    i_ssd = ssd_mb( h, luma_ssd, chroma_ssd );
 
     if( IS_SKIP( h->mb.i_type ) )
     {
@@ -191,7 +193,7 @@ static int x264_rd_cost_mb( x264_t *h, int i_lambda2 )
 
 /* partition RD functions use 8 bits more precision to avoid large rounding errors at low QPs */
 
-static uint64_t x264_rd_cost_subpart( x264_t *h, int i_lambda2, int i4, int i_pixel )
+static uint64_t x264_rd_cost_subpart( x264_t *h, int i_lambda2, int i4, int i_pixel, int *luma_distortion, int *chroma_distortion )
 {
     uint64_t i_ssd, i_bits;
 
@@ -201,12 +203,13 @@ static uint64_t x264_rd_cost_subpart( x264_t *h, int i_lambda2, int i4, int i_pi
     if( i_pixel == PIXEL_4x8 )
         x264_macroblock_encode_p4x4( h, i4+2 );
 
-    i_ssd = ssd_plane( h, i_pixel, 0, block_idx_x[i4]*4, block_idx_y[i4]*4 );
+    i_ssd = ssd_plane( h, i_pixel, 0, block_idx_x[i4] * 4, block_idx_y[i4] * 4, luma_distortion );
     if( CHROMA444 )
     {
-        int chromassd = ssd_plane( h, i_pixel, 1, block_idx_x[i4]*4, block_idx_y[i4]*4 )
-                      + ssd_plane( h, i_pixel, 2, block_idx_x[i4]*4, block_idx_y[i4]*4 );
+        int chromassd = ssd_plane( h, i_pixel, 1, block_idx_x[i4] * 4, block_idx_y[i4] * 4, chroma_distortion )
+                      + ssd_plane( h, i_pixel, 2, block_idx_x[i4] * 4, block_idx_y[i4] * 4, chroma_distortion );
         chromassd = ((uint64_t)chromassd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+        *chroma_distortion = chromassd;
         i_ssd += chromassd;
     }
 
@@ -223,19 +226,19 @@ static uint64_t x264_rd_cost_subpart( x264_t *h, int i_lambda2, int i4, int i_pi
     return (i_ssd<<8) + i_bits;
 }
 
-uint64_t x264_rd_cost_part( x264_t *h, int i_lambda2, int i4, int i_pixel )
+uint64_t x264_rd_cost_part( x264_t *h, int i_lambda2, int i4, int i_pixel, int *i_luma_dist, int *i_chroma_dist )
 {
     uint64_t i_ssd, i_bits;
     int i8 = i4 >> 2;
 
     if( i_pixel == PIXEL_16x16 )
     {
-        int i_cost = x264_rd_cost_mb( h, i_lambda2 );
+        int i_cost = x264_rd_cost_mb( h, i_lambda2, i_luma_dist, i_chroma_dist );
         return i_cost;
     }
 
     if( i_pixel > PIXEL_8x8 )
-        return x264_rd_cost_subpart( h, i_lambda2, i4, i_pixel );
+        return x264_rd_cost_subpart( h, i_lambda2, i4, i_pixel, i_luma_dist, i_chroma_dist );
 
     h->mb.i_cbp_luma = 0;
 
@@ -247,11 +250,12 @@ uint64_t x264_rd_cost_part( x264_t *h, int i_lambda2, int i4, int i_pixel )
 
     int ssd_x = 8*(i8&1);
     int ssd_y = 8*(i8>>1);
-    i_ssd = ssd_plane( h, i_pixel, 0, ssd_x, ssd_y );
+    i_ssd = ssd_plane( h, i_pixel, 0, ssd_x, ssd_y, i_luma_dist );
     int chromapix = h->luma2chroma_pixel[i_pixel];
-    int chromassd = ssd_plane( h, chromapix, 1, ssd_x>>CHROMA_H_SHIFT, ssd_y>>CHROMA_V_SHIFT )
-                  + ssd_plane( h, chromapix, 2, ssd_x>>CHROMA_H_SHIFT, ssd_y>>CHROMA_V_SHIFT );
-    i_ssd += ((uint64_t)chromassd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+    int chromassd = ssd_plane( h, chromapix, 1, ssd_x >> CHROMA_H_SHIFT, ssd_y >> CHROMA_V_SHIFT, i_chroma_dist )
+                  + ssd_plane( h, chromapix, 2, ssd_x >> CHROMA_H_SHIFT, ssd_y >> CHROMA_V_SHIFT, i_chroma_dist );
+    *i_chroma_dist = ((uint64_t)chromassd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+    i_ssd += *i_chroma_dist;
 
     if( h->param.b_cabac )
     {
@@ -266,7 +270,7 @@ uint64_t x264_rd_cost_part( x264_t *h, int i_lambda2, int i4, int i_pixel )
     return (i_ssd<<8) + i_bits;
 }
 
-static uint64_t x264_rd_cost_i8x8( x264_t *h, int i_lambda2, int i8, int i_mode, pixel edge[4][32] )
+static uint64_t x264_rd_cost_i8x8( x264_t *h, int i_lambda2, int i8, int i_mode, pixel edge[4][32], int *luma_distortion, int *chroma_distortion )
 {
     uint64_t i_ssd, i_bits;
     int plane_count = CHROMA444 ? 3 : 1;
@@ -280,12 +284,13 @@ static uint64_t x264_rd_cost_i8x8( x264_t *h, int i_lambda2, int i8, int i_mode,
         i_qp = h->mb.i_chroma_qp;
     }
 
-    i_ssd = ssd_plane( h, PIXEL_8x8, 0, (i8&1)*8, (i8>>1)*8 );
+    i_ssd = ssd_plane( h, PIXEL_8x8, 0, (i8 & 1) * 8, (i8 >> 1) * 8, luma_distortion );
     if( CHROMA444 )
     {
-        int chromassd = ssd_plane( h, PIXEL_8x8, 1, (i8&1)*8, (i8>>1)*8 )
-                      + ssd_plane( h, PIXEL_8x8, 2, (i8&1)*8, (i8>>1)*8 );
+        int chromassd = ssd_plane( h, PIXEL_8x8, 1, (i8 & 1) * 8, (i8 >> 1) * 8, chroma_distortion )
+                      + ssd_plane( h, PIXEL_8x8, 2, (i8 & 1) * 8, (i8 >> 1) * 8, chroma_distortion );
         chromassd = ((uint64_t)chromassd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+        *chroma_distortion = chromassd;
         i_ssd += chromassd;
     }
 
@@ -302,7 +307,7 @@ static uint64_t x264_rd_cost_i8x8( x264_t *h, int i_lambda2, int i8, int i_mode,
     return (i_ssd<<8) + i_bits;
 }
 
-static uint64_t x264_rd_cost_i4x4( x264_t *h, int i_lambda2, int i4, int i_mode )
+static uint64_t x264_rd_cost_i4x4( x264_t *h, int i_lambda2, int i4, int i_mode, int *luma_distortion, int *chroma_distortion )
 {
     uint64_t i_ssd, i_bits;
     int plane_count = CHROMA444 ? 3 : 1;
@@ -314,12 +319,13 @@ static uint64_t x264_rd_cost_i4x4( x264_t *h, int i_lambda2, int i4, int i_mode 
         i_qp = h->mb.i_chroma_qp;
     }
 
-    i_ssd = ssd_plane( h, PIXEL_4x4, 0, block_idx_x[i4]*4, block_idx_y[i4]*4 );
+    i_ssd = ssd_plane( h, PIXEL_4x4, 0, block_idx_x[i4] * 4, block_idx_y[i4] * 4, luma_distortion );
     if( CHROMA444 )
     {
-        int chromassd = ssd_plane( h, PIXEL_4x4, 1, block_idx_x[i4]*4, block_idx_y[i4]*4 )
-                      + ssd_plane( h, PIXEL_4x4, 2, block_idx_x[i4]*4, block_idx_y[i4]*4 );
+        int chromassd = ssd_plane( h, PIXEL_4x4, 1, block_idx_x[i4] * 4, block_idx_y[i4] * 4, chroma_distortion )
+                      + ssd_plane( h, PIXEL_4x4, 2, block_idx_x[i4] * 4, block_idx_y[i4] * 4, chroma_distortion );
         chromassd = ((uint64_t)chromassd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
+        *chroma_distortion = chromassd;
         i_ssd += chromassd;
     }
 
@@ -336,7 +342,7 @@ static uint64_t x264_rd_cost_i4x4( x264_t *h, int i_lambda2, int i4, int i_mode 
     return (i_ssd<<8) + i_bits;
 }
 
-static uint64_t x264_rd_cost_chroma( x264_t *h, int i_lambda2, int i_mode, int b_dct )
+static uint64_t x264_rd_cost_chroma( x264_t *h, int i_lambda2, int i_mode, int b_dct, int *chroma_ssd )
 {
     uint64_t i_ssd, i_bits;
 
@@ -344,8 +350,9 @@ static uint64_t x264_rd_cost_chroma( x264_t *h, int i_lambda2, int i_mode, int b
         x264_mb_encode_chroma( h, 0, h->mb.i_chroma_qp );
 
     int chromapix = h->luma2chroma_pixel[PIXEL_16x16];
-    i_ssd = ssd_plane( h, chromapix, 1, 0, 0 )
-          + ssd_plane( h, chromapix, 2, 0, 0 );
+    i_ssd = ssd_plane( h, chromapix, 1, 0, 0, chroma_ssd )
+          + ssd_plane( h, chromapix, 2, 0, 0, chroma_ssd );
+    *chroma_ssd = ((uint64_t)i_ssd * h->mb.i_chroma_lambda2_offset + 128) >> 8;
 
     h->mb.i_chroma_pred_mode = i_mode;
 

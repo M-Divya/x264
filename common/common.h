@@ -889,8 +889,8 @@ struct x264_t
         int8_t deblock_ref_table[X264_REF_MAX*2+2];
 #define deblock_ref_table(x) h->mb.deblock_ref_table[(x)+2]
 
-        uint64_t i_mb_luma_satd;
-        uint64_t i_mb_chroma_satd;
+        uint64_t i_mb_luma_distortion;
+        uint64_t i_mb_chroma_distortion;
 
     } mb;
 

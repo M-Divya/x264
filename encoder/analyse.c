@@ -38,11 +38,15 @@ typedef struct
 {
     /* 16x16 */
     int       i_rd16x16;
+    int       i_luma_distortion16x16;
+    int       i_chroma_distortion16x16;
     x264_me_t me16x16;
     x264_me_t bi16x16;      /* for b16x16 BI mode, since MVs can differ from l0/l1 */
 
     /* 8x8 */
     int       i_cost8x8;
+    int       i_luma_distortion8x8;
+    int       i_chroma_distortion8x8;
     /* [ref][0] is 16x16 mv, [ref][1..4] are 8x8 mv from partition [0..3] */
     ALIGNED_4( int16_t mvc[32][5][2] );
     x264_me_t me8x8[4];
@@ -61,10 +65,14 @@ typedef struct
 
     /* 16x8 */
     int       i_cost16x8;
+    int       i_luma_distortion16x8;
+    int       i_chroma_distortion16x8;
     x264_me_t me16x8[2];
 
     /* 8x16 */
     int       i_cost8x16;
+    int       i_luma_distortion8x16;
+    int       i_chroma_distortion8x16;
     x264_me_t me8x16[2];
 
 } x264_mb_analysis_list_t;
@@ -89,23 +97,31 @@ typedef struct
 
     /* Luma part */
     int i_satd_i16x16;
+    int i_luma_distortion_i16x16;
+    int i_chroma_distortion_i16x16;
     int i_satd_i16x16_dir[7];
     int i_predict16x16;
 
     int i_satd_i8x8;
+    int i_luma_distortion_i8x8;
+    int i_chroma_distortion_i8x8;
     int i_cbp_i8x8_luma;
     ALIGNED_16( uint16_t i_satd_i8x8_dir[4][16] );
     int i_predict8x8[4];
 
     int i_satd_i4x4;
+    int i_luma_distortion_i4x4;
+    int i_chroma_distortion_i4x4;
     int i_predict4x4[16];
 
     int i_satd_pcm;
+    int i_luma_distortion;
 
     /* Chroma part */
     int i_satd_chroma;
     int i_satd_chroma_dir[7];
     int i_predict8x8chroma;
+    int i_chroma_distortion;
 
     /* II: Inter part P/B frame */
     x264_mb_analysis_list_t l0;
@@ -125,6 +141,17 @@ typedef struct
     int i_rd16x8bi;
     int i_rd8x16bi;
     int i_rd8x8bi;
+
+    int i_luma_distortion_16x16bi;
+    int i_chroma_distortion_16x16bi;
+    int i_luma_distortion_16x16direct;
+    int i_chroma_distortion_16x16direct;
+    int i_luma_distortion_16x8bi;
+    int i_chroma_distortion_16x8bi;
+    int i_luma_distortion_8x16bi;
+    int i_chroma_distortion_8x16bi;
+    int i_luma_distortion_8x8bi;
+    int i_chroma_distortion_8x8bi;
 
     int i_mb_partition16x8[2]; /* mb_partition_e */
     int i_mb_partition8x16[2];
@@ -433,6 +460,13 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int qp )
     a->i_satd_i4x4   =
     a->i_satd_chroma = COST_MAX;
 
+    a->i_luma_distortion_i16x16   =
+    a->i_luma_distortion_i4x4     =
+    a->i_luma_distortion_i8x8     =
+    a->i_chroma_distortion_i16x16 =
+    a->i_chroma_distortion_i4x4   =
+    a->i_chroma_distortion_i8x8   = 0;
+
     /* non-RD PCM decision is inaccurate (as is psy-rd), so don't do it.
      * PCM cost can overflow with high lambda2, so cap it at COST_MAX. */
     uint64_t pcm_cost = ((uint64_t)X264_PCM_COST*a->i_lambda2 + 128) >> 8;
@@ -537,6 +571,16 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int qp )
         a->l0.i_cost8x8    =
         a->l0.i_cost16x8   =
         a->l0.i_cost8x16   = COST_MAX;
+
+        a->l0.i_luma_distortion16x16   =
+        a->l0.i_chroma_distortion16x16 =
+        a->l0.i_luma_distortion16x8    =
+        a->l0.i_chroma_distortion16x8  =
+        a->l0.i_luma_distortion8x16    =
+        a->l0.i_chroma_distortion8x16  =
+        a->l0.i_luma_distortion8x8     =
+        a->l0.i_chroma_distortion8x8   = 0;
+
         if( h->sh.i_type == SLICE_TYPE_B )
         {
             a->l1.me16x16.cost =
@@ -558,6 +602,19 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int qp )
             a->i_cost8x8bi     =
             a->i_cost16x8bi    =
             a->i_cost8x16bi    = COST_MAX;
+
+            a->l1.i_luma_distortion16x16       =
+            a->l1.i_chroma_distortion16x16     =
+            a->i_luma_distortion_16x16bi       =
+            a->i_chroma_distortion_16x16bi     =
+            a->i_luma_distortion_16x16direct   =
+            a->i_chroma_distortion_16x16direct =
+            a->i_luma_distortion_16x8bi        =
+            a->i_chroma_distortion_16x8bi      =
+            a->i_luma_distortion_8x16bi        =
+            a->i_chroma_distortion_8x16bi      =
+            a->i_luma_distortion_8x8bi         =
+            a->i_chroma_distortion_8x8bi       = 0;
         }
         else if( h->param.analyse.inter & X264_ANALYSE_PSUB8x8 )
             for( int i = 0; i < 4; i++ )
@@ -1111,7 +1168,7 @@ static void x264_intra_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_thresh )
     {
         h->mb.i_type = I_16x16;
         x264_analyse_update_cache( h, a );
-        a->i_satd_i16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_satd_i16x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_i16x16, &a->i_chroma_distortion_i16x16 );
     }
     else
         a->i_satd_i16x16 = COST_MAX;
@@ -1120,7 +1177,7 @@ static void x264_intra_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_thresh )
     {
         h->mb.i_type = I_4x4;
         x264_analyse_update_cache( h, a );
-        a->i_satd_i4x4 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_satd_i4x4 = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_i4x4, &a->i_chroma_distortion_i4x4 );
     }
     else
         a->i_satd_i4x4 = COST_MAX;
@@ -1129,7 +1186,7 @@ static void x264_intra_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_thresh )
     {
         h->mb.i_type = I_8x8;
         x264_analyse_update_cache( h, a );
-        a->i_satd_i8x8 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_satd_i8x8 = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_i8x8, &a->i_chroma_distortion_i8x8 );
         a->i_cbp_i8x8_luma = h->mb.i_cbp_luma;
     }
     else
@@ -1154,8 +1211,8 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
             if( i_mode == old_pred_mode || a->i_satd_i16x16_dir[i_mode] > i_thresh )
                 continue;
             h->mb.i_intra16x16_pred_mode = i_mode;
-            i_satd = x264_rd_cost_mb( h, a->i_lambda2 );
-            COPY2_IF_LT( i_best, i_satd, a->i_predict16x16, i_mode );
+            i_satd = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_i16x16, &a->i_chroma_distortion_i16x16 );
+            COPY4_IF_LT( i_best, i_satd, a->i_predict16x16, i_mode, a->i_luma_distortion, a->i_luma_distortion_i16x16, a->i_chroma_distortion, a->i_chroma_distortion_i16x16 );
         }
     }
 
@@ -1180,10 +1237,11 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
             {
                 int i_cbp_chroma_best = h->mb.i_cbp_chroma;
                 int i_chroma_lambda = x264_lambda2_tab[h->mb.i_chroma_qp];
+                int i_chroma_dist = 0;
                 /* the previous thing encoded was x264_intra_rd(), so the pixels and
                  * coefs for the current chroma mode are still around, so we only
                  * have to recount the bits. */
-                i_best = x264_rd_cost_chroma( h, i_chroma_lambda, a->i_predict8x8chroma, 0 );
+                i_best = x264_rd_cost_chroma( h, i_chroma_lambda, a->i_predict8x8chroma, 0, &a->i_chroma_distortion );
                 for( int i = 0; i < i_max; i++ )
                 {
                     int i_mode = predict_mode_sorted[i];
@@ -1197,8 +1255,8 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
                     /* if we've already found a mode that needs no residual, then
                      * probably any mode with a residual will be worse.
                      * so avoid dct on the remaining modes to improve speed. */
-                    i_satd = x264_rd_cost_chroma( h, i_chroma_lambda, i_mode, h->mb.i_cbp_chroma != 0x00 );
-                    COPY3_IF_LT( i_best, i_satd, a->i_predict8x8chroma, i_mode, i_cbp_chroma_best, h->mb.i_cbp_chroma );
+                    i_satd = x264_rd_cost_chroma( h, i_chroma_lambda, i_mode, h->mb.i_cbp_chroma != 0x00, &i_chroma_dist );
+                    COPY4_IF_LT( i_best, i_satd, a->i_predict8x8chroma, i_mode, i_cbp_chroma_best, h->mb.i_cbp_chroma, a->i_chroma_distortion, i_chroma_dist );
                 }
                 h->mb.i_chroma_pred_mode = a->i_predict8x8chroma;
                 h->mb.i_cbp_chroma = i_cbp_chroma_best;
@@ -1210,6 +1268,8 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
     {
         pixel4 pels[3][4] = {{0}}; // doesn't need initting, just shuts up a gcc warning
         int nnz[3] = {0};
+        a->i_luma_distortion = 0;
+        a->i_chroma_distortion = 0;
         for( int idx = 0; idx < 16; idx++ )
         {
             pixel *dst[3] = {h->mb.pic.p_fdec[0] + block_idx_xy_fdec[idx],
@@ -1227,12 +1287,16 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
             for( ; *predict_mode >= 0; predict_mode++ )
             {
                 int i_mode = *predict_mode;
-                i_satd = x264_rd_cost_i4x4( h, a->i_lambda2, idx, i_mode );
+                int luma_dist = 0;
+                int chroma_dist = 0;
+                i_satd = x264_rd_cost_i4x4( h, a->i_lambda2, idx, i_mode, &luma_dist, &chroma_dist );
 
                 if( i_best > i_satd )
                 {
                     a->i_predict4x4[idx] = i_mode;
                     i_best = i_satd;
+                    a->i_luma_distortion_i4x4 = luma_dist;
+                    a->i_chroma_distortion_i4x4 = chroma_dist;
                     for( int p = 0; p < plane_count; p++ )
                     {
                         pels[p][0] = MPIXEL_X4( dst[p]+0*FDEC_STRIDE );
@@ -1243,6 +1307,9 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
                     }
                 }
             }
+
+            a->i_luma_distortion += a->i_luma_distortion_i4x4;
+            a->i_chroma_distortion += a->i_chroma_distortion_i4x4;
 
             for( int p = 0; p < plane_count; p++ )
             {
@@ -1262,6 +1329,8 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
         pixel4 pels_h[3][2] = {{0}};
         pixel pels_v[3][7] = {{0}};
         uint16_t nnz[3][2] = {{0}}; //shut up gcc
+        a->i_luma_distortion = 0;
+        a->i_chroma_distortion = 0;
         for( int idx = 0; idx < 4; idx++ )
         {
             int x = idx&1;
@@ -1282,17 +1351,21 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
             for( ; *predict_mode >= 0; predict_mode++ )
             {
                 int i_mode = *predict_mode;
+                int luma_dist = 0;
+                int chroma_dist = 0;
                 if( a->i_satd_i8x8_dir[idx][i_mode] > i_thresh )
                     continue;
 
                 h->mb.i_cbp_luma = a->i_cbp_i8x8_luma;
-                i_satd = x264_rd_cost_i8x8( h, a->i_lambda2, idx, i_mode, edge );
+                i_satd = x264_rd_cost_i8x8( h, a->i_lambda2, idx, i_mode, edge, &luma_dist, &chroma_dist );
 
                 if( i_best > i_satd )
                 {
                     a->i_predict8x8[idx] = i_mode;
                     cbp_luma_new = h->mb.i_cbp_luma;
                     i_best = i_satd;
+                    a->i_luma_distortion_i8x8 = luma_dist;
+                    a->i_chroma_distortion_i8x8 = chroma_dist;
 
                     for( int p = 0; p < plane_count; p++ )
                     {
@@ -1306,6 +1379,8 @@ static void x264_intra_rd_refine( x264_t *h, x264_mb_analysis_t *a )
                     }
                 }
             }
+            a->i_luma_distortion += a->i_luma_distortion_i8x8;
+            a->i_chroma_distortion += a->i_chroma_distortion_i8x8;
             a->i_cbp_i8x8_luma = cbp_luma_new;
             for( int p = 0; p < plane_count; p++ )
             {
@@ -1437,7 +1512,7 @@ static void x264_mb_analyse_inter_p16x16( x264_t *h, x264_mb_analysis_t *a )
         {
             h->mb.i_partition = D_16x16;
             x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, a->l0.me16x16.mv );
-            a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+            a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion16x16, &a->l0.i_chroma_distortion16x16 );
             if( !(h->mb.i_cbp_luma|h->mb.i_cbp_chroma) )
                 h->mb.i_type = P_SKIP;
         }
@@ -2668,14 +2743,14 @@ static void x264_mb_analyse_p_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd )
     {
         h->mb.i_partition = D_16x16;
         x264_analyse_update_cache( h, a );
-        a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion16x16, &a->l0.i_chroma_distortion16x16 );
     }
 
     if( a->l0.i_cost16x8 < thresh )
     {
         h->mb.i_partition = D_16x8;
         x264_analyse_update_cache( h, a );
-        a->l0.i_cost16x8 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l0.i_cost16x8 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion16x8, &a->l0.i_chroma_distortion16x8 );
     }
     else
         a->l0.i_cost16x8 = COST_MAX;
@@ -2684,7 +2759,7 @@ static void x264_mb_analyse_p_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd )
     {
         h->mb.i_partition = D_8x16;
         x264_analyse_update_cache( h, a );
-        a->l0.i_cost8x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l0.i_cost8x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion8x16, &a->l0.i_chroma_distortion8x16 );
     }
     else
         a->l0.i_cost8x16 = COST_MAX;
@@ -2710,13 +2785,15 @@ static void x264_mb_analyse_p_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd )
                 for( subtype = D_L0_4x4; subtype <= D_L0_8x8; subtype++ )
                 {
                     uint64_t cost;
+                    int i_luma_dist = 0;
+                    int i_chroma_dist = 0;
                     if( costs[subtype] > sub8x8_thresh )
                         continue;
                     h->mb.i_sub_partition[i] = subtype;
                     x264_mb_cache_mv_p8x8( h, a, i );
                     if( subtype == btype )
                         continue;
-                    cost = x264_rd_cost_part( h, a->i_lambda2, i<<2, PIXEL_8x8 );
+                    cost = x264_rd_cost_part( h, a->i_lambda2, i << 2, PIXEL_8x8, &i_luma_dist, &i_chroma_dist );
                     COPY2_IF_LT( bcost, cost, btype, subtype );
                 }
                 if( h->mb.i_sub_partition[i] != btype )
@@ -2728,7 +2805,7 @@ static void x264_mb_analyse_p_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd )
         }
         else
             x264_analyse_update_cache( h, a );
-        a->l0.i_cost8x8 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l0.i_cost8x8 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion8x8, &a->l0.i_chroma_distortion8x8 );
     }
     else
         a->l0.i_cost8x8 = COST_MAX;
@@ -2745,7 +2822,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
         /* Requires b-rdo to be done before intra analysis */
         h->mb.b_skip_mc = 1;
         x264_analyse_update_cache( h, a );
-        a->i_rd16x16direct = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_rd16x16direct = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_16x16direct, &a->i_chroma_distortion_16x16direct );
         h->mb.b_skip_mc = 0;
     }
 
@@ -2756,7 +2833,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
     {
         h->mb.i_type = B_L0_L0;
         x264_analyse_update_cache( h, a );
-        a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l0.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->l0.i_luma_distortion16x16, &a->l0.i_chroma_distortion16x16 );
     }
 
     /* L1 */
@@ -2764,7 +2841,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
     {
         h->mb.i_type = B_L1_L1;
         x264_analyse_update_cache( h, a );
-        a->l1.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->l1.i_rd16x16 = x264_rd_cost_mb( h, a->i_lambda2, &a->l1.i_luma_distortion16x16, &a->l1.i_chroma_distortion16x16 );
     }
 
     /* BI */
@@ -2772,7 +2849,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
     {
         h->mb.i_type = B_BI_BI;
         x264_analyse_update_cache( h, a );
-        a->i_rd16x16bi = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_rd16x16bi = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_16x16bi, &a->i_chroma_distortion_16x16bi );
     }
 
     /* 8x8 */
@@ -2781,7 +2858,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
         h->mb.i_type = B_8x8;
         h->mb.i_partition = D_8x8;
         x264_analyse_update_cache( h, a );
-        a->i_rd8x8bi = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_rd8x8bi = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_8x8bi, &a->i_chroma_distortion_8x8bi );
         x264_macroblock_cache_skip( h, 0, 0, 4, 4, 0 );
     }
 
@@ -2791,7 +2868,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
         h->mb.i_type = a->i_mb_type16x8;
         h->mb.i_partition = D_16x8;
         x264_analyse_update_cache( h, a );
-        a->i_rd16x8bi = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_rd16x8bi = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_16x8bi, &a->i_chroma_distortion_16x8bi );
     }
 
     /* 8x16 */
@@ -2800,7 +2877,7 @@ static void x264_mb_analyse_b_rd( x264_t *h, x264_mb_analysis_t *a, int i_satd_i
         h->mb.i_type = a->i_mb_type8x16;
         h->mb.i_partition = D_8x16;
         x264_analyse_update_cache( h, a );
-        a->i_rd8x16bi = x264_rd_cost_mb( h, a->i_lambda2 );
+        a->i_rd8x16bi = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion_8x16bi, &a->i_chroma_distortion_8x16bi );
     }
 }
 
@@ -2890,6 +2967,7 @@ static inline void x264_mb_analyse_transform_rd( x264_t *h, x264_mb_analysis_t *
     if( h->param.analyse.b_transform_8x8 && h->pps->b_transform_8x8_mode )
     {
         uint32_t subpart_bak = M32( h->mb.i_sub_partition );
+        int luma_dist, chroma_dist;
         /* Try switching the subpartitions to 8x8 so that we can use 8x8 transform mode */
         if( h->mb.i_type == P_8x8 )
             M32( h->mb.i_sub_partition ) = D_L0_8x8*0x01010101;
@@ -2899,13 +2977,15 @@ static inline void x264_mb_analyse_transform_rd( x264_t *h, x264_mb_analysis_t *
         x264_analyse_update_cache( h, a );
         h->mb.b_transform_8x8 ^= 1;
         /* FIXME only luma is needed for 4:2:0, but the score for comparison already includes chroma */
-        int i_rd8 = x264_rd_cost_mb( h, a->i_lambda2 );
+        int i_rd8 = x264_rd_cost_mb( h, a->i_lambda2, &luma_dist, &chroma_dist );
 
         if( *i_rd >= i_rd8 )
         {
             if( *i_rd > 0 )
                 *i_satd = (int64_t)(*i_satd) * i_rd8 / *i_rd;
             *i_rd = i_rd8;
+            a->i_luma_distortion = luma_dist;
+            a->i_chroma_distortion = chroma_dist;
         }
         else
         {
@@ -2927,8 +3007,9 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
     int bcost, cost, failures, prevcost, origcost;
     int orig_qp = h->mb.i_qp, bqp = h->mb.i_qp;
     int last_qp_tried = 0;
-    origcost = bcost = x264_rd_cost_mb( h, a->i_lambda2 );
+    origcost = bcost = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion, &a->i_chroma_distortion );
     int origcbp = h->mb.cbp[h->mb.i_mb_xy];
+    int i_luma_dist, i_chroma_dist;
 
     /* If CBP is already zero, don't raise the quantizer any higher. */
     for( int direction = origcbp ? 1 : -1; direction >= -1; direction-=2 )
@@ -2960,7 +3041,7 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
             {
                 h->mb.i_qp = X264_MAX( h->mb.i_qp - threshold - 1, SPEC_QP( h->param.rc.i_qp_min ) );
                 h->mb.i_chroma_qp = h->chroma_qp_table[h->mb.i_qp];
-                already_checked_cost = x264_rd_cost_mb( h, a->i_lambda2 );
+                already_checked_cost = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion, &a->i_chroma_distortion );
                 if( !h->mb.cbp[h->mb.i_mb_xy] )
                 {
                     /* If our empty-CBP block is lower QP than the last QP,
@@ -2984,8 +3065,8 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
             else
             {
                 h->mb.i_chroma_qp = h->chroma_qp_table[h->mb.i_qp];
-                cost = x264_rd_cost_mb( h, a->i_lambda2 );
-                COPY2_IF_LT( bcost, cost, bqp, h->mb.i_qp );
+                cost = x264_rd_cost_mb( h, a->i_lambda2, &i_luma_dist, &i_chroma_dist );
+                COPY4_IF_LT( bcost, cost, bqp, h->mb.i_qp, a->i_luma_distortion, i_luma_dist, a->i_chroma_distortion, i_chroma_dist );
             }
 
             /* We can't assume that the costs are monotonic over QPs.
@@ -3009,8 +3090,8 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
     {
         h->mb.i_qp = h->mb.i_last_qp;
         h->mb.i_chroma_qp = h->chroma_qp_table[h->mb.i_qp];
-        cost = x264_rd_cost_mb( h, a->i_lambda2 );
-        COPY2_IF_LT( bcost, cost, bqp, h->mb.i_qp );
+        cost = x264_rd_cost_mb( h, a->i_lambda2, &i_luma_dist, &i_chroma_dist );
+        COPY4_IF_LT( bcost, cost, bqp, h->mb.i_qp, a->i_luma_distortion, i_luma_dist, a->i_chroma_distortion, i_chroma_dist );
     }
 
     h->mb.i_qp = bqp;
@@ -3021,7 +3102,7 @@ static inline void x264_mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
         x264_mb_transform_8x8_allowed( h ) )
     {
         h->mb.b_transform_8x8 ^= 1;
-        cost = x264_rd_cost_mb( h, a->i_lambda2 );
+        cost = x264_rd_cost_mb( h, a->i_lambda2, &a->i_luma_distortion, &a->i_chroma_distortion );
         if( cost > bcost )
             h->mb.b_transform_8x8 ^= 1;
     }
@@ -3057,10 +3138,15 @@ intra_analysis:
 
         i_cost = analysis.i_satd_i16x16;
         h->mb.i_type = I_16x16;
-        COPY2_IF_LT( i_cost, analysis.i_satd_i4x4, h->mb.i_type, I_4x4 );
-        COPY2_IF_LT( i_cost, analysis.i_satd_i8x8, h->mb.i_type, I_8x8 );
-        if( analysis.i_satd_pcm < i_cost )
+        analysis.i_luma_distortion = analysis.i_luma_distortion_i16x16;
+        analysis.i_chroma_distortion = analysis.i_chroma_distortion_i16x16;
+        COPY4_IF_LT( i_cost, analysis.i_satd_i4x4, h->mb.i_type, I_4x4, analysis.i_luma_distortion, analysis.i_luma_distortion_i4x4, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i4x4 );
+        COPY4_IF_LT( i_cost, analysis.i_satd_i8x8, h->mb.i_type, I_8x8, analysis.i_luma_distortion, analysis.i_luma_distortion_i8x8, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i8x8 );
+        if ( analysis.i_satd_pcm < i_cost )
+        {
             h->mb.i_type = I_PCM;
+            analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
+        }
 
         else if( analysis.i_mbrd >= 2 )
             x264_intra_rd_refine( h, &analysis );
@@ -3068,6 +3154,7 @@ intra_analysis:
     else if( h->sh.i_type == SLICE_TYPE_P )
     {
         int b_skip = 0;
+        analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
 
         h->mc.prefetch_ref( h->mb.pic.p_fref[0][0][h->mb.i_mb_x&3], h->mb.pic.i_stride[0], 0 );
 
@@ -3171,6 +3258,8 @@ skip_analysis:
             i_type = P_L0;
             i_partition = D_16x16;
             i_cost = analysis.l0.me16x16.cost;
+            analysis.i_luma_distortion = analysis.l0.i_luma_distortion16x16;
+            analysis.i_chroma_distortion = analysis.l0.i_chroma_distortion16x16;
 
             if( ( flags & X264_ANALYSE_PSUB16x16 ) && (!analysis.b_early_terminate ||
                 analysis.l0.i_cost8x8 < analysis.l0.me16x16.cost) )
@@ -3323,9 +3412,16 @@ skip_analysis:
                 i_type = P_L0;
                 i_partition = D_16x16;
                 i_cost = analysis.l0.i_rd16x16;
-                COPY2_IF_LT( i_cost, analysis.l0.i_cost16x8, i_partition, D_16x8 );
-                COPY2_IF_LT( i_cost, analysis.l0.i_cost8x16, i_partition, D_8x16 );
+                analysis.i_luma_distortion = analysis.l0.i_luma_distortion16x16;
+                analysis.i_chroma_distortion = analysis.l0.i_chroma_distortion16x16;
+                COPY4_IF_LT( i_cost, analysis.l0.i_cost16x8, i_partition, D_16x8, analysis.i_luma_distortion, analysis.l0.i_luma_distortion16x8, analysis.i_chroma_distortion, analysis.l0.i_chroma_distortion16x8 );
+                COPY4_IF_LT( i_cost, analysis.l0.i_cost8x16, i_partition, D_8x16, analysis.i_luma_distortion, analysis.l0.i_luma_distortion8x16, analysis.i_chroma_distortion, analysis.l0.i_chroma_distortion8x16 );
                 COPY3_IF_LT( i_cost, analysis.l0.i_cost8x8, i_partition, D_8x8, i_type, P_8x8 );
+                if ( i_type == P_8x8 )
+                {
+                    analysis.i_luma_distortion = analysis.l0.i_luma_distortion8x8;
+                    analysis.i_chroma_distortion = analysis.l0.i_chroma_distortion8x8;
+                }
                 h->mb.i_type = i_type;
                 h->mb.i_partition = i_partition;
                 if( i_cost < COST_MAX )
@@ -3333,10 +3429,10 @@ skip_analysis:
                 x264_intra_rd( h, &analysis, i_satd_inter * 5/4 + 1 );
             }
 
-            COPY2_IF_LT( i_cost, analysis.i_satd_i16x16, i_type, I_16x16 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_i8x8, i_type, I_8x8 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_i4x4, i_type, I_4x4 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i16x16, i_type, I_16x16, analysis.i_luma_distortion, analysis.i_luma_distortion_i16x16, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i16x16 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i8x8, i_type, I_8x8, analysis.i_luma_distortion, analysis.i_luma_distortion_i8x8, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i8x8 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i4x4, i_type, I_4x4, analysis.i_luma_distortion, analysis.i_luma_distortion_i4x4, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i4x4 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM, analysis.i_luma_distortion, 0, analysis.i_chroma_distortion, 0 );
 
             h->mb.i_type = i_type;
 
@@ -3368,51 +3464,72 @@ skip_analysis:
                 {
                     x264_macroblock_cache_ref( h, 0, 0, 4, 4, 0, analysis.l0.me16x16.i_ref );
                     analysis.l0.me16x16.cost = i_cost;
-                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x16, analysis.i_lambda2, 0, 0 );
+                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x16, analysis.i_lambda2, 0, 0, &analysis.i_luma_distortion, &analysis.i_chroma_distortion );
                 }
                 else if( i_partition == D_16x8 )
                 {
+                    int i_luma_dist[2] = { 0 };
+                    int i_chroma_dist[2] = { 0 };
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
                     h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
                     x264_macroblock_cache_ref( h, 0, 0, 4, 2, 0, analysis.l0.me16x8[0].i_ref );
                     x264_macroblock_cache_ref( h, 0, 2, 4, 2, 0, analysis.l0.me16x8[1].i_ref );
-                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[0], analysis.i_lambda2, 0, 0 );
-                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[1], analysis.i_lambda2, 8, 0 );
+                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[0], analysis.i_lambda2, 0, 0, &i_luma_dist[0], &i_chroma_dist[0] );
+                    x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[1], analysis.i_lambda2, 8, 0, &i_luma_dist[1], &i_chroma_dist[1] );
+                    analysis.i_luma_distortion += i_luma_dist[0] + i_luma_dist[1];
+                    analysis.i_chroma_distortion += i_chroma_dist[0] + i_chroma_dist[1];
                 }
                 else if( i_partition == D_8x16 )
                 {
+                    int i_luma_dist[2] = { 0 };
+                    int i_chroma_dist[2] = { 0 };
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     h->mb.i_sub_partition[0] = h->mb.i_sub_partition[1] =
                     h->mb.i_sub_partition[2] = h->mb.i_sub_partition[3] = D_L0_8x8;
                     x264_macroblock_cache_ref( h, 0, 0, 2, 4, 0, analysis.l0.me8x16[0].i_ref );
                     x264_macroblock_cache_ref( h, 2, 0, 2, 4, 0, analysis.l0.me8x16[1].i_ref );
-                    x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[0], analysis.i_lambda2, 0, 0 );
-                    x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[1], analysis.i_lambda2, 4, 0 );
+                    x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[0], analysis.i_lambda2, 0, 0, &i_luma_dist[0], &i_chroma_dist[0] );
+                    x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[1], analysis.i_lambda2, 4, 0, &i_luma_dist[1], &i_chroma_dist[1] );
+                    analysis.i_luma_distortion += i_luma_dist[0] + i_luma_dist[1];
+                    analysis.i_chroma_distortion += i_chroma_dist[0] + i_chroma_dist[1];
                 }
                 else if( i_partition == D_8x8 )
                 {
                     x264_analyse_update_cache( h, &analysis );
+                    int luma_dist[4] = { 0 };
+                    int chroma_dist[4] = { 0 };
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     for( int i8x8 = 0; i8x8 < 4; i8x8++ )
                     {
                         if( h->mb.i_sub_partition[i8x8] == D_L0_8x8 )
                         {
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x8[i8x8], analysis.i_lambda2, i8x8*4, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x8[i8x8], analysis.i_lambda2, i8x8 * 4, 0, &luma_dist[0], &chroma_dist[0] );
+                            analysis.i_luma_distortion += luma_dist[0];
+                            analysis.i_chroma_distortion += chroma_dist[0];
                         }
                         else if( h->mb.i_sub_partition[i8x8] == D_L0_8x4 )
                         {
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x4[i8x8][0], analysis.i_lambda2, i8x8*4+0, 0 );
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x4[i8x8][1], analysis.i_lambda2, i8x8*4+2, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x4[i8x8][0], analysis.i_lambda2, i8x8 * 4 + 0, 0, &luma_dist[0], &chroma_dist[0] );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x4[i8x8][1], analysis.i_lambda2, i8x8 * 4 + 2, 0, &luma_dist[1], &chroma_dist[1] );
+                            analysis.i_luma_distortion += luma_dist[0] + luma_dist[1];
+                            analysis.i_chroma_distortion += chroma_dist[0] + chroma_dist[1];
                         }
                         else if( h->mb.i_sub_partition[i8x8] == D_L0_4x8 )
                         {
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x8[i8x8][0], analysis.i_lambda2, i8x8*4+0, 0 );
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x8[i8x8][1], analysis.i_lambda2, i8x8*4+1, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x8[i8x8][0], analysis.i_lambda2, i8x8 * 4 + 0, 0, &luma_dist[0], &chroma_dist[0] );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x8[i8x8][1], analysis.i_lambda2, i8x8 * 4 + 1, 0, &luma_dist[1], &chroma_dist[1] );
+                            analysis.i_luma_distortion += luma_dist[0] + luma_dist[1];
+                            analysis.i_chroma_distortion += chroma_dist[0] + chroma_dist[1];
                         }
                         else if( h->mb.i_sub_partition[i8x8] == D_L0_4x4 )
                         {
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][0], analysis.i_lambda2, i8x8*4+0, 0 );
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][1], analysis.i_lambda2, i8x8*4+1, 0 );
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][2], analysis.i_lambda2, i8x8*4+2, 0 );
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][3], analysis.i_lambda2, i8x8*4+3, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][0], analysis.i_lambda2, i8x8 * 4 + 0, 0, &luma_dist[0], &chroma_dist[0] );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][1], analysis.i_lambda2, i8x8 * 4 + 1, 0, &luma_dist[1], &chroma_dist[1] );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][2], analysis.i_lambda2, i8x8 * 4 + 2, 0, &luma_dist[2], &chroma_dist[2] );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me4x4[i8x8][3], analysis.i_lambda2, i8x8 * 4 + 3, 0, &luma_dist[3], &chroma_dist[3] );
+                            analysis.i_luma_distortion += luma_dist[0] + luma_dist[1] + luma_dist[2] + luma_dist[3];
+                            analysis.i_chroma_distortion += chroma_dist[0] + chroma_dist[1] + chroma_dist[2] + chroma_dist[3];
                         }
                     }
                 }
@@ -3422,12 +3539,15 @@ skip_analysis:
     else if( h->sh.i_type == SLICE_TYPE_B )
     {
         int i_bskip_cost = COST_MAX;
+        int i_luma_distortion_bskip = 0;
+        int i_chroma_distortion_bskip = 0;
         int b_skip = 0;
 
         if( analysis.i_mbrd )
             x264_mb_init_fenc_cache( h, analysis.i_mbrd >= 2 );
 
         h->mb.i_type = B_SKIP;
+        analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
         if( h->mb.b_direct_auto_write )
         {
             /* direct=auto heuristic: prefer whichever mode allows more Skip macroblocks */
@@ -3462,7 +3582,7 @@ skip_analysis:
                 b_skip = 1;
             else if( analysis.i_mbrd )
             {
-                i_bskip_cost = ssd_mb( h );
+                i_bskip_cost = ssd_mb( h, &i_luma_distortion_bskip, &i_chroma_distortion_bskip );
                 /* 6 = minimum cavlc cost of a non-skipped MB */
                 b_skip = h->mb.b_skip_mc = i_bskip_cost <= ((6 * analysis.i_lambda2 + 128) >> 8);
             }
@@ -3527,6 +3647,10 @@ skip_analysis:
                     i_bskip_cost < analysis.l1.i_rd16x16 )
                 {
                     h->mb.i_type = B_SKIP;
+                    analysis.i_luma_distortion = i_luma_distortion_bskip;
+                    analysis.i_chroma_distortion = i_chroma_distortion_bskip;
+                    h->mb.i_mb_luma_distortion += analysis.i_luma_distortion;
+                    h->mb.i_mb_chroma_distortion += analysis.i_chroma_distortion;
                     x264_analyse_update_cache( h, &analysis );
                     return;
                 }
@@ -3693,13 +3817,30 @@ skip_analysis:
                 i_type = B_SKIP;
                 i_cost = i_bskip_cost;
                 i_partition = D_16x16;
-                COPY2_IF_LT( i_cost, analysis.l0.i_rd16x16, i_type, B_L0_L0 );
-                COPY2_IF_LT( i_cost, analysis.l1.i_rd16x16, i_type, B_L1_L1 );
-                COPY2_IF_LT( i_cost, analysis.i_rd16x16bi, i_type, B_BI_BI );
-                COPY2_IF_LT( i_cost, analysis.i_rd16x16direct, i_type, B_DIRECT );
+                analysis.i_luma_distortion = i_luma_distortion_bskip;
+                analysis.i_chroma_distortion = i_chroma_distortion_bskip;
+                COPY4_IF_LT( i_cost, analysis.l0.i_rd16x16, i_type, B_L0_L0, analysis.i_luma_distortion, analysis.l0.i_luma_distortion16x16, analysis.i_chroma_distortion, analysis.l0.i_chroma_distortion16x16 );
+                COPY4_IF_LT( i_cost, analysis.l1.i_rd16x16, i_type, B_L1_L1, analysis.i_luma_distortion, analysis.l1.i_luma_distortion16x16, analysis.i_chroma_distortion, analysis.l1.i_chroma_distortion16x16 );
+                COPY4_IF_LT( i_cost, analysis.i_rd16x16bi, i_type, B_BI_BI, analysis.i_luma_distortion, analysis.i_luma_distortion_16x16bi, analysis.i_chroma_distortion, analysis.i_chroma_distortion_16x16bi );
+                COPY4_IF_LT( i_cost, analysis.i_rd16x16direct, i_type, B_DIRECT, analysis.i_luma_distortion, analysis.i_luma_distortion_16x16direct, analysis.i_chroma_distortion, analysis.i_chroma_distortion_16x16direct );
                 COPY3_IF_LT( i_cost, analysis.i_rd16x8bi, i_type, analysis.i_mb_type16x8, i_partition, D_16x8 );
                 COPY3_IF_LT( i_cost, analysis.i_rd8x16bi, i_type, analysis.i_mb_type8x16, i_partition, D_8x16 );
                 COPY3_IF_LT( i_cost, analysis.i_rd8x8bi, i_type, B_8x8, i_partition, D_8x8 );
+                if ( i_partition == D_16x8 )
+                {
+                    analysis.i_luma_distortion = analysis.i_luma_distortion_16x8bi;
+                    analysis.i_chroma_distortion = analysis.i_chroma_distortion_16x8bi;
+                }
+                else if ( i_partition == D_8x16 )
+                {
+                    analysis.i_luma_distortion = analysis.i_luma_distortion_8x16bi;
+                    analysis.i_chroma_distortion = analysis.i_chroma_distortion_8x16bi;
+                }
+                else if ( i_partition == D_8x8 )
+                {
+                    analysis.i_luma_distortion = analysis.i_luma_distortion_8x8bi;
+                    analysis.i_chroma_distortion = analysis.i_chroma_distortion_8x8bi;
+                }
 
                 h->mb.i_type = i_type;
                 h->mb.i_partition = i_partition;
@@ -3730,10 +3871,10 @@ skip_analysis:
                 x264_intra_rd( h, &analysis, i_satd_inter * 17/16 + 1 );
             }
 
-            COPY2_IF_LT( i_cost, analysis.i_satd_i16x16, i_type, I_16x16 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_i8x8, i_type, I_8x8 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_i4x4, i_type, I_4x4 );
-            COPY2_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i16x16, i_type, I_16x16, analysis.i_luma_distortion, analysis.i_luma_distortion_i16x16, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i16x16 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i8x8, i_type, I_8x8, analysis.i_luma_distortion, analysis.i_luma_distortion_i8x8, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i8x8 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_i4x4, i_type, I_4x4, analysis.i_luma_distortion, analysis.i_luma_distortion_i4x4, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i4x4 );
+            COPY4_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM, analysis.i_luma_distortion, 0, analysis.i_chroma_distortion, 0 );
 
             h->mb.i_type = i_type;
             h->mb.i_partition = i_partition;
@@ -3753,64 +3894,79 @@ skip_analysis:
                     if( i_type == B_L0_L0 )
                     {
                         analysis.l0.me16x16.cost = i_cost;
-                        x264_me_refine_qpel_rd( h, &analysis.l0.me16x16, analysis.i_lambda2, 0, 0 );
+                        x264_me_refine_qpel_rd( h, &analysis.l0.me16x16, analysis.i_lambda2, 0, 0, &analysis.i_luma_distortion, &analysis.i_chroma_distortion );
                     }
                     else if( i_type == B_L1_L1 )
                     {
                         analysis.l1.me16x16.cost = i_cost;
-                        x264_me_refine_qpel_rd( h, &analysis.l1.me16x16, analysis.i_lambda2, 0, 1 );
+                        x264_me_refine_qpel_rd( h, &analysis.l1.me16x16, analysis.i_lambda2, 0, 1, &analysis.i_luma_distortion, &analysis.i_chroma_distortion );
                     }
                     else if( i_type == B_BI_BI )
                     {
                         i_biweight = h->mb.bipred_weight[analysis.l0.bi16x16.i_ref][analysis.l1.bi16x16.i_ref];
-                        x264_me_refine_bidir_rd( h, &analysis.l0.bi16x16, &analysis.l1.bi16x16, i_biweight, 0, analysis.i_lambda2 );
+                        x264_me_refine_bidir_rd( h, &analysis.l0.bi16x16, &analysis.l1.bi16x16, i_biweight, 0, analysis.i_lambda2, &analysis.i_luma_distortion, &analysis.i_chroma_distortion );
                     }
                 }
                 else if( i_partition == D_16x8 )
                 {
+                    int luma_dist = 0;
+                    int chroma_dist = 0;
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     for( int i = 0; i < 2; i++ )
                     {
                         h->mb.i_sub_partition[i*2] = h->mb.i_sub_partition[i*2+1] = analysis.i_mb_partition16x8[i];
                         if( analysis.i_mb_partition16x8[i] == D_L0_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[i], analysis.i_lambda2, i*8, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me16x8[i], analysis.i_lambda2, i * 8, 0, &luma_dist, &chroma_dist );
                         else if( analysis.i_mb_partition16x8[i] == D_L1_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l1.me16x8[i], analysis.i_lambda2, i*8, 1 );
+                            x264_me_refine_qpel_rd( h, &analysis.l1.me16x8[i], analysis.i_lambda2, i * 8, 1, &luma_dist, &chroma_dist );
                         else if( analysis.i_mb_partition16x8[i] == D_BI_8x8 )
                         {
                             i_biweight = h->mb.bipred_weight[analysis.l0.me16x8[i].i_ref][analysis.l1.me16x8[i].i_ref];
-                            x264_me_refine_bidir_rd( h, &analysis.l0.me16x8[i], &analysis.l1.me16x8[i], i_biweight, i*2, analysis.i_lambda2 );
+                            x264_me_refine_bidir_rd( h, &analysis.l0.me16x8[i], &analysis.l1.me16x8[i], i_biweight, i * 2, analysis.i_lambda2, &luma_dist, &chroma_dist );
                         }
+                        analysis.i_luma_distortion += luma_dist;
+                        analysis.i_chroma_distortion += chroma_dist;
                     }
                 }
                 else if( i_partition == D_8x16 )
                 {
+                    int luma_dist = 0;
+                    int chroma_dist = 0;
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     for( int i = 0; i < 2; i++ )
                     {
                         h->mb.i_sub_partition[i] = h->mb.i_sub_partition[i+2] = analysis.i_mb_partition8x16[i];
                         if( analysis.i_mb_partition8x16[i] == D_L0_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[i], analysis.i_lambda2, i*4, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x16[i], analysis.i_lambda2, i * 4, 0, &luma_dist, &chroma_dist );
                         else if( analysis.i_mb_partition8x16[i] == D_L1_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l1.me8x16[i], analysis.i_lambda2, i*4, 1 );
+                            x264_me_refine_qpel_rd( h, &analysis.l1.me8x16[i], analysis.i_lambda2, i * 4, 1, &luma_dist, &chroma_dist );
                         else if( analysis.i_mb_partition8x16[i] == D_BI_8x8 )
                         {
                             i_biweight = h->mb.bipred_weight[analysis.l0.me8x16[i].i_ref][analysis.l1.me8x16[i].i_ref];
-                            x264_me_refine_bidir_rd( h, &analysis.l0.me8x16[i], &analysis.l1.me8x16[i], i_biweight, i, analysis.i_lambda2 );
+                            x264_me_refine_bidir_rd( h, &analysis.l0.me8x16[i], &analysis.l1.me8x16[i], i_biweight, i, analysis.i_lambda2, &luma_dist, &chroma_dist );
                         }
+                        analysis.i_luma_distortion += luma_dist;
+                        analysis.i_chroma_distortion += chroma_dist;
                     }
                 }
                 else if( i_partition == D_8x8 )
                 {
+                    int luma_dist = 0;
+                    int chroma_dist = 0;
+                    analysis.i_luma_distortion = analysis.i_chroma_distortion = 0;
                     for( int i = 0; i < 4; i++ )
                     {
                         if( h->mb.i_sub_partition[i] == D_L0_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x8[i], analysis.i_lambda2, i*4, 0 );
+                            x264_me_refine_qpel_rd( h, &analysis.l0.me8x8[i], analysis.i_lambda2, i * 4, 0, &luma_dist, &chroma_dist );
                         else if( h->mb.i_sub_partition[i] == D_L1_8x8 )
-                            x264_me_refine_qpel_rd( h, &analysis.l1.me8x8[i], analysis.i_lambda2, i*4, 1 );
+                            x264_me_refine_qpel_rd( h, &analysis.l1.me8x8[i], analysis.i_lambda2, i * 4, 1, &luma_dist, &chroma_dist );
                         else if( h->mb.i_sub_partition[i] == D_BI_8x8 )
                         {
                             i_biweight = h->mb.bipred_weight[analysis.l0.me8x8[i].i_ref][analysis.l1.me8x8[i].i_ref];
-                            x264_me_refine_bidir_rd( h, &analysis.l0.me8x8[i], &analysis.l1.me8x8[i], i_biweight, i, analysis.i_lambda2 );
+                            x264_me_refine_bidir_rd( h, &analysis.l0.me8x8[i], &analysis.l1.me8x8[i], i_biweight, i, analysis.i_lambda2, &luma_dist, &chroma_dist );
                         }
+                        analysis.i_luma_distortion += luma_dist;
+                        analysis.i_chroma_distortion += chroma_dist;
                     }
                 }
             }
@@ -3847,24 +4003,8 @@ skip_analysis:
         h->mb.i_skip_intra = 0;
 
     /* store luma and chroma satd for logging */
-    if( h->mb.b_chroma_me )
-    {
-        if( analysis.i_satd_i16x16 < COST_MAX )
-            h->mb.i_mb_luma_satd += analysis.i_satd_i16x16 - analysis.i_satd_chroma;
-        if( analysis.i_satd_i8x8 < COST_MAX )
-            h->mb.i_mb_luma_satd += analysis.i_satd_i8x8 - analysis.i_satd_chroma;
-        if( analysis.i_satd_i4x4 < COST_MAX )
-            h->mb.i_mb_luma_satd += analysis.i_satd_i4x4 - analysis.i_satd_chroma;
-        if( analysis.i_satd_chroma < COST_MAX )
-            h->mb.i_mb_chroma_satd += analysis.i_satd_chroma;
-    }
-    else
-    {
-        h->mb.i_mb_luma_satd += analysis.i_satd_i16x16;
-        h->mb.i_mb_luma_satd += analysis.i_satd_i8x8;
-        h->mb.i_mb_luma_satd += analysis.i_satd_i4x4;
-        h->mb.i_mb_chroma_satd += analysis.i_satd_chroma;
-    }
+    h->mb.i_mb_luma_distortion += analysis.i_luma_distortion;
+    h->mb.i_mb_chroma_distortion += analysis.i_chroma_distortion;
 }
 
 /*-------------------- Update MB from the analysis ----------------------*/

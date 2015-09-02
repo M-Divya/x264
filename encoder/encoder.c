@@ -3799,11 +3799,12 @@ csv_write:
         if( thread_oldest->param.rc.i_rc_method == X264_RC_CRF )
             pic_out->frameData.f_crf_avg = pic_out->prop.f_crf_avg;
         memcpy( &(pic_out->frameData.i_mb_count), &(thread_oldest->stat.frame.i_mb_count), sizeof(thread_oldest->stat.frame.i_mb_count) );
-        pic_out->frameData.f_luma_satd = thread_oldest->mb.i_mb_luma_satd;
-        pic_out->frameData.f_chroma_satd = thread_oldest->mb.i_mb_chroma_satd;
+        pic_out->frameData.f_luma_satd = thread_oldest->mb.i_mb_luma_distortion;
+        pic_out->frameData.f_chroma_satd = thread_oldest->mb.i_mb_chroma_distortion;
         pic_out->frameData.f_avg_luma_level = thread_oldest->fenc->f_avg_luma_level;
         pic_out->frameData.i_max_luma_level = thread_oldest->fenc->i_max_luma_level;
         pic_out->frameData.i_min_luma_level = thread_oldest->fenc->i_min_luma_level;
+        thread_oldest->mb.i_mb_luma_distortion = thread_oldest->mb.i_mb_chroma_distortion = 0;
 
         x264_csvlog_frame( thread_oldest->csvfh, &thread_oldest->param, pic_out, thread_oldest->param.i_csv_log_level );
     }

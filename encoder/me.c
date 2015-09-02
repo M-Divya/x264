@@ -1024,7 +1024,7 @@ static void refine_subpel( x264_t *h, x264_me_t *m, int hpel_iters, int qpel_ite
  * other than making its iteration count not a compile-time constant. */
 int x264_iter_kludge = 0;
 
-static void ALWAYS_INLINE x264_me_refine_bidir( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_weight, int i8, int i_lambda2, int rd )
+static void ALWAYS_INLINE x264_me_refine_bidir( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_weight, int i8, int i_lambda2, int rd, int *i_luma_dist, int *i_chroma_dist )
 {
     int x = i8&1;
     int y = i8>>1;
@@ -1126,6 +1126,8 @@ static void ALWAYS_INLINE x264_me_refine_bidir( x264_t *h, x264_me_t *m0, x264_m
                 {
                     if( cost < SATD_THRESH(bcost) )
                     {
+                        int luma_dist = 0;
+                        int chroma_dist = 0;
                         bcost = X264_MIN( cost, bcost );
                         M32( cache0_mv ) = pack16to32_mask(m0x,m0y);
                         M32( cache1_mv ) = pack16to32_mask(m1x,m1y);
@@ -1139,8 +1141,8 @@ static void ALWAYS_INLINE x264_me_refine_bidir( x264_t *h, x264_me_t *m0, x264_m
                             h->mc.avg[chromapix]( pixu, FDEC_STRIDE, pixu_buf[0][i0], 8, pixu_buf[1][i1], 8, i_weight );
                             h->mc.avg[chromapix]( pixv, FDEC_STRIDE, pixv_buf[0][i0], 8, pixv_buf[1][i1], 8, i_weight );
                         }
-                        uint64_t costrd = x264_rd_cost_part( h, i_lambda2, i8*4, m0->i_pixel );
-                        COPY2_IF_LT( bcostrd, costrd, bestj, j );
+                        uint64_t costrd = x264_rd_cost_part( h, i_lambda2, i8 * 4, m0->i_pixel, &luma_dist, &chroma_dist );
+                        COPY4_IF_LT( bcostrd, costrd, bestj, j, *i_luma_dist, luma_dist, *i_chroma_dist, chroma_dist );
                     }
                 }
                 else
@@ -1179,15 +1181,16 @@ static void ALWAYS_INLINE x264_me_refine_bidir( x264_t *h, x264_me_t *m0, x264_m
 
 void x264_me_refine_bidir_satd( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_weight )
 {
-    x264_me_refine_bidir( h, m0, m1, i_weight, 0, 0, 0 );
+    int distortion;
+    x264_me_refine_bidir( h, m0, m1, i_weight, 0, 0, 0, &distortion, &distortion );
 }
 
-void x264_me_refine_bidir_rd( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_weight, int i8, int i_lambda2 )
+void x264_me_refine_bidir_rd( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_weight, int i8, int i_lambda2, int *i_luma_dist, int *i_chroma_dist )
 {
     /* Motion compensation is done as part of bidir_rd; don't repeat
      * it in encoding. */
     h->mb.b_skip_mc = 1;
-    x264_me_refine_bidir( h, m0, m1, i_weight, i8, i_lambda2, 1 );
+    x264_me_refine_bidir( h, m0, m1, i_weight, i8, i_lambda2, 1, i_luma_dist, i_chroma_dist );
     h->mb.b_skip_mc = 0;
 }
 
@@ -1225,12 +1228,17 @@ void x264_me_refine_bidir_rd( x264_t *h, x264_me_t *m0, x264_me_t *m1, int i_wei
             if( m->weight[2].weightfn ) \
                 m->weight[2].weightfn[bw>>3]( pixv, FDEC_STRIDE, pixv, FDEC_STRIDE, &m->weight[2], bh>>chroma_v_shift ); \
         } \
-        cost = x264_rd_cost_part( h, i_lambda2, i4, m->i_pixel ); \
+        cost = x264_rd_cost_part( h, i_lambda2, i4, m->i_pixel, &luma_dist, &chroma_dist ); \
+        if ( cost < bcost ) \
+        { \
+            *i_luma_dist = luma_dist; \
+            *i_chroma_dist = chroma_dist; \
+        } \
         COPY4_IF_LT( bcost, cost, bmx, mx, bmy, my, dir, do_dir?mdir:dir ); \
     } \
 }
 
-void x264_me_refine_qpel_rd( x264_t *h, x264_me_t *m, int i_lambda2, int i4, int i_list )
+void x264_me_refine_qpel_rd( x264_t *h, x264_me_t *m, int i_lambda2, int i4, int i_list, int *i_luma_dist, int *i_chroma_dist )
 {
     int16_t *cache_mv = h->mb.cache.mv[i_list][x264_scan8[i4]];
     const uint16_t *p_cost_mvx, *p_cost_mvy;
@@ -1239,6 +1247,8 @@ void x264_me_refine_qpel_rd( x264_t *h, x264_me_t *m, int i_lambda2, int i4, int
     const int i_pixel = m->i_pixel;
     int chroma_v_shift = CHROMA_V_SHIFT;
     int mvy_offset = chroma_v_shift & MB_INTERLACED & m->i_ref ? (h->mb.i_mb_y & 1)*4 - 2 : 0;
+    int luma_dist = 0;
+    int chroma_dist = 0;
 
     uint64_t bcost = COST_MAX64;
     int bmx = m->mv[0];
