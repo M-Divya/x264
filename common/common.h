@@ -891,6 +891,7 @@ struct x264_t
 
         uint64_t i_mb_luma_distortion;
         uint64_t i_mb_chroma_distortion;
+        uint64_t i_mb_psy_energy;
 
     } mb;
 

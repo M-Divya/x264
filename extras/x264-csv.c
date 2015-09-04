@@ -76,13 +76,14 @@ FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int le
         " Total MB Count,"
         " AverageLumaDistortion,"
         " AverageChromaDistortion,"
+        " Average Psy Energy,"
         " Average Luma Level,"
         " Maximum Luma Level,"
         " Minimum Luma Level \n";
 
     FILE *csvfh = NULL;
     csvfh = x264_fopen( filename, "r" );
-    if ( csvfh )
+    if( csvfh )
     {
         fclose( csvfh );
         /* file already exist re-open the file with append mode */
@@ -92,9 +93,9 @@ FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int le
     {
         /* open new csv file and write header */
         csvfh = x264_fopen( filename, "wb" );
-        if ( csvfh )
+        if( csvfh )
         {
-            if ( level )
+            if( level )
             {
                 fprintf( csvfh, "%s", CSVHeader );
                 if ( param->rc.i_rc_method == X264_RC_CRF )
@@ -114,7 +115,7 @@ FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int le
 
 void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_picture_t* pic, int level )
 {
-    if ( csvfh )
+    if( csvfh )
     {
         fprintf( csvfh, "%4d, %c, %3d, %.2f, %d, ",
                  pic->frameData.i_frame,
@@ -122,17 +123,17 @@ void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_pictu
                  pic->frameData.i_poc,
                  pic->frameData.f_qp_avg_aq,
                  pic->frameData.frame_size );
-        if ( param->rc.i_rc_method == X264_RC_CRF )
+        if( param->rc.i_rc_method == X264_RC_CRF )
             fprintf( csvfh, "%2.8f,", pic->frameData.f_crf_avg );
         /* if psnr enabled */
-        if ( param->analyse.b_psnr )
+        if( param->analyse.b_psnr )
             fprintf( csvfh, "%5.2f, %5.2f, %5.2f, %5.2f, ",
                      pic->frameData.f_psnr_y,
                      pic->frameData.f_psnr_u,
                      pic->frameData.f_psnr_v,
                      pic->frameData.f_psnr );
         /* if ssim enabled */
-        if ( param->analyse.b_ssim )
+        if( param->analyse.b_ssim )
         {
             double inv_ssim = 1 - pic->frameData.f_ssim;
             double ssim_db;
@@ -146,15 +147,16 @@ void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_pictu
         }
 
         int mbCount = 0;
-        for ( int j = 0; j < X264_MBTYPE_MAX; j++ )
+        for( int j = 0; j < X264_MBTYPE_MAX; j++ )
         {
             fprintf( csvfh, "%d,", pic->frameData.i_mb_count[j] );
             mbCount += pic->frameData.i_mb_count[j];
         }
-        fprintf( csvfh, "%d, %.2lf, %.2lf, %.2lf, %u, %u",
+        fprintf( csvfh, "%d, %.2lf, %.2lf, %.2lf, %.2lf, %u, %u",
                  mbCount,
                  ( double )( pic->frameData.f_luma_satd ) / mbCount,
                  ( double )( pic->frameData.f_chroma_satd ) / mbCount,
+                 ( double )( pic->frameData.i_psy_energy ) / mbCount,
                  pic->frameData.f_avg_luma_level,
                  pic->frameData.i_max_luma_level,
                  pic->frameData.i_min_luma_level );
