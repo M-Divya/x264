@@ -671,6 +671,8 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
             }
         }
 
+        h->mb.i_mb_res_energy += h->pixf.ssd[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE, h->mb.pic.p_fdec[0], FDEC_STRIDE );
+
         x264_macroblock_encode_skip( h );
         return;
     }
@@ -679,6 +681,7 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
         /* don't do bskip motion compensation if it was already done in macroblock_analyse */
         if( !h->mb.b_skip_mc )
             x264_mb_mc( h );
+        h->mb.i_mb_res_energy += h->pixf.ssd[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE, h->mb.pic.p_fdec[0], FDEC_STRIDE );
         x264_macroblock_encode_skip( h );
         return;
     }
@@ -753,6 +756,8 @@ static ALWAYS_INLINE void x264_macroblock_encode_internal( x264_t *h, int plane_
         /* Don't repeat motion compensation if it was already done in non-RD transform analysis */
         if( !h->mb.b_skip_mc )
             x264_mb_mc( h );
+
+        h->mb.i_mb_res_energy += h->pixf.ssd[PIXEL_16x16]( h->mb.pic.p_fenc[0], FENC_STRIDE, h->mb.pic.p_fdec[0], FDEC_STRIDE );
 
         if( h->mb.b_lossless )
         {

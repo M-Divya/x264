@@ -77,6 +77,7 @@ FILE * x264_csvlog_open( const x264_param_t* param, const char* filename, int le
         " AverageLumaDistortion,"
         " AverageChromaDistortion,"
         " Average Psy Energy,"
+        " Average Residual Energy,"
         " Average Luma Level,"
         " Maximum Luma Level,"
         " Minimum Luma Level \n";
@@ -152,11 +153,12 @@ void x264_csvlog_frame( FILE* csvfh, const x264_param_t* param, const x264_pictu
             fprintf( csvfh, "%d,", pic->frameData.i_mb_count[j] );
             mbCount += pic->frameData.i_mb_count[j];
         }
-        fprintf( csvfh, "%d, %.2lf, %.2lf, %.2lf, %.2lf, %u, %u",
+        fprintf( csvfh, "%d, %.2lf, %.2lf, %.2lf, %.2lf, %.2lf, %u, %u",
                  mbCount,
                  ( double )( pic->frameData.f_luma_satd ) / mbCount,
                  ( double )( pic->frameData.f_chroma_satd ) / mbCount,
                  ( double )( pic->frameData.i_psy_energy ) / mbCount,
+                 ( double )( pic->frameData.i_res_energy ) / mbCount,
                  pic->frameData.f_avg_luma_level,
                  pic->frameData.i_max_luma_level,
                  pic->frameData.i_min_luma_level );

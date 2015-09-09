@@ -3802,10 +3802,11 @@ csv_write:
         pic_out->frameData.f_luma_satd = thread_oldest->mb.i_mb_luma_distortion;
         pic_out->frameData.f_chroma_satd = thread_oldest->mb.i_mb_chroma_distortion;
         pic_out->frameData.i_psy_energy = thread_oldest->mb.i_mb_psy_energy;
+        pic_out->frameData.i_res_energy = thread_oldest->mb.i_mb_res_energy;
         pic_out->frameData.f_avg_luma_level = thread_oldest->fenc->f_avg_luma_level;
         pic_out->frameData.i_max_luma_level = thread_oldest->fenc->i_max_luma_level;
         pic_out->frameData.i_min_luma_level = thread_oldest->fenc->i_min_luma_level;
-        thread_oldest->mb.i_mb_luma_distortion = thread_oldest->mb.i_mb_chroma_distortion = thread_oldest->mb.i_mb_psy_energy = 0;
+        thread_oldest->mb.i_mb_luma_distortion = thread_oldest->mb.i_mb_chroma_distortion = thread_oldest->mb.i_mb_psy_energy = thread_oldest->mb.i_mb_res_energy = 0;
 
         x264_csvlog_frame( thread_oldest->csvfh, &thread_oldest->param, pic_out, thread_oldest->param.i_csv_log_level );
     }

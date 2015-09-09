@@ -830,6 +830,7 @@ typedef struct x264_frame_stats_t
     uint64_t        f_luma_satd;
     uint64_t        f_chroma_satd;
     uint64_t        i_psy_energy;
+    uint64_t        i_res_energy;
     float           f_qp_avg_aq;
     int             i_frame;
     int             i_type;

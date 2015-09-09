@@ -104,6 +104,7 @@ typedef struct
     int i_luma_distortion_i16x16;
     int i_chroma_distortion_i16x16;
     int i_psy_energy_i16x16;
+    int i_res_energy_i16x16;
     int i_satd_i16x16_dir[7];
     int i_predict16x16;
 
@@ -111,6 +112,7 @@ typedef struct
     int i_luma_distortion_i8x8;
     int i_chroma_distortion_i8x8;
     int i_psy_energy_i8x8;
+    int i_res_energy_i8x8;
     int i_cbp_i8x8_luma;
     ALIGNED_16( uint16_t i_satd_i8x8_dir[4][16] );
     int i_predict8x8[4];
@@ -119,11 +121,13 @@ typedef struct
     int i_luma_distortion_i4x4;
     int i_chroma_distortion_i4x4;
     int i_psy_energy_i4x4;
+    int i_res_energy_i4x4;
     int i_predict4x4[16];
 
     int i_satd_pcm;
     int i_luma_distortion;
     int i_psy_energy;
+    int i_res_energy;
 
     /* Chroma part */
     int i_satd_chroma;
@@ -482,7 +486,10 @@ static void x264_mb_analyse_init( x264_t *h, x264_mb_analysis_t *a, int qp )
     a->i_chroma_distortion_i8x8   =
     a->i_psy_energy_i16x16        =
     a->i_psy_energy_i4x4          =
-    a->i_psy_energy_i8x8          = 0;
+    a->i_psy_energy_i8x8          =
+    a->i_res_energy_i16x16        =
+    a->i_res_energy_i8x8          =
+    a->i_res_energy_i4x4          = 0;
 
     /* non-RD PCM decision is inaccurate (as is psy-rd), so don't do it.
      * PCM cost can overflow with high lambda2, so cap it at COST_MAX. */
@@ -903,6 +910,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         /* Not heavily tuned */
         static const uint8_t i16x16_thresh_lut[11] = { 2, 2, 2, 3, 3, 4, 4, 4, 4, 4, 4 };
         int i16x16_thresh = a->b_fast_intra ? (i16x16_thresh_lut[h->mb.i_subpel_refine]*i_satd_inter)>>1 : COST_MAX;
+        int i_res_energy;
 
         if( !h->mb.b_lossless && predict_mode[3] >= 0 )
         {
@@ -920,7 +928,13 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 h->predict_16x16[I_PRED_16x16_P]( p_dst );
                 a->i_satd_i16x16_dir[I_PRED_16x16_P] = h->pixf.mbcmp[PIXEL_16x16]( p_dst, FDEC_STRIDE, p_src, FENC_STRIDE );
                 a->i_satd_i16x16_dir[I_PRED_16x16_P] += lambda * bs_size_ue(3);
-                COPY2_IF_LT( a->i_satd_i16x16, a->i_satd_i16x16_dir[I_PRED_16x16_P], a->i_predict16x16, 3 );
+                i_res_energy = h->pixf.ssd[PIXEL_16x16]( p_src, FENC_STRIDE, p_dst, FDEC_STRIDE );
+                COPY3_IF_LT( a->i_satd_i16x16, a->i_satd_i16x16_dir[I_PRED_16x16_P], a->i_predict16x16, 3, a->i_res_energy_i16x16, i_res_energy );
+            }
+            if( a->i_predict16x16 < 3 )
+            {
+                h->predict_16x16[a->i_predict16x16]( p_dst );
+                a->i_res_energy_i16x16 = h->pixf.ssd[PIXEL_16x16]( p_src, FENC_STRIDE, p_dst, FDEC_STRIDE );
             }
         }
         else
@@ -937,7 +951,8 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
 
                 i_satd = h->pixf.mbcmp[PIXEL_16x16]( p_dst, FDEC_STRIDE, p_src, FENC_STRIDE ) +
                          lambda * bs_size_ue( x264_mb_pred_mode16x16_fix[i_mode] );
-                COPY2_IF_LT( a->i_satd_i16x16, i_satd, a->i_predict16x16, i_mode );
+                i_res_energy = h->pixf.ssd[PIXEL_16x16]( p_src, FENC_STRIDE, p_dst, FDEC_STRIDE );
+                COPY3_IF_LT( a->i_satd_i16x16, i_satd, a->i_predict16x16, i_mode, a->i_res_energy_i16x16, i_res_energy );
                 a->i_satd_i16x16_dir[i_mode] = i_satd;
             }
         }
@@ -960,6 +975,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
 
         // FIXME some bias like in i4x4?
         int i_cost = lambda * 4; /* base predmode costs */
+        int i_res_energy_i8x8 = 0;
         h->mb.i_cbp_luma = 0;
 
         if( h->sh.i_type == SLICE_TYPE_B )
@@ -984,12 +1000,15 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 i_cost += i_best & 0xffff;
                 i_best >>= 16;
                 a->i_predict8x8[idx] = i_best;
+                i_res_energy_i8x8 += h->pixf.ssd[PIXEL_8x8]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
                 if( idx == 3 || i_cost > i_satd_thresh )
                     break;
                 x264_macroblock_cache_intra8x8_pred( h, 2*x, 2*y, i_best );
             }
             else
             {
+                int i_res_energy;
+
                 if( !h->mb.b_lossless && predict_mode[5] >= 0 )
                 {
                     ALIGNED_ARRAY_16( int32_t, satd,[9] );
@@ -1003,6 +1022,9 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                         COPY2_IF_LT( i_best, cost, a->i_predict8x8[idx], i );
                     }
 
+                    h->predict_8x8[a->i_predict8x8[idx]]( p_dst_by, edge );
+                    i_res_energy = h->pixf.ssd[PIXEL_8x8]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
+
                     /* Take analysis shortcuts: don't analyse modes that are too
                      * far away direction-wise from the favored mode. */
                     if( a->i_mbrd < 1 + a->b_fast_intra )
@@ -1015,6 +1037,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 {
                     int i_satd;
                     int i_mode = *predict_mode;
+                    int i_res_energy_temp;
 
                     if( h->mb.b_lossless )
                         x264_predict_lossless_8x8( h, p_dst_by, 0, idx, i_mode, edge );
@@ -1024,11 +1047,13 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                     i_satd = sa8d( p_dst_by, FDEC_STRIDE, p_src_by, FENC_STRIDE );
                     if( i_pred_mode == x264_mb_pred_mode4x4_fix(i_mode) )
                         i_satd -= 3 * lambda;
+                    i_res_energy_temp = h->pixf.ssd[PIXEL_8x8]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
 
-                    COPY2_IF_LT( i_best, i_satd, a->i_predict8x8[idx], i_mode );
+                    COPY3_IF_LT( i_best, i_satd, a->i_predict8x8[idx], i_mode, i_res_energy, i_res_energy_temp );
                     a->i_satd_i8x8_dir[idx][i_mode] = i_satd + 4 * lambda;
                 }
                 i_cost += i_best + 3*lambda;
+                i_res_energy_i8x8 += i_res_energy;
 
                 if( idx == 3 || i_cost > i_satd_thresh )
                     break;
@@ -1045,6 +1070,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         if( idx == 3 )
         {
             a->i_satd_i8x8 = i_cost;
+            a->i_res_energy_i8x8 = i_res_energy_i8x8;
             if( h->mb.i_skip_intra )
             {
                 h->mc.copy[PIXEL_16x16]( h->mb.pic.i8x8_fdec_buf, 16, p_dst, FDEC_STRIDE, 16 );
@@ -1061,6 +1087,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         {
             static const uint16_t cost_div_fix8[3] = {1024,512,341};
             a->i_satd_i8x8 = COST_MAX;
+            a->i_res_energy_i8x8 = 0;
             i_cost = (i_cost * cost_div_fix8[idx]) >> 8;
         }
         /* Not heavily tuned */
@@ -1075,6 +1102,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         int i_cost = lambda * (24+16); /* 24from JVT (SATD0), 16 from base predmode costs */
         int i_satd_thresh = a->b_early_terminate ? X264_MIN3( i_satd_inter, a->i_satd_i16x16, a->i_satd_i8x8 ) : COST_MAX;
         h->mb.i_cbp_luma = 0;
+        int i_res_energy_i4x4 = 0;
 
         if( a->b_early_terminate && a->i_mbrd )
             i_satd_thresh = i_satd_thresh * (10-a->b_fast_intra)/8;
@@ -1102,12 +1130,15 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                 i_cost += i_best & 0xffff;
                 i_best >>= 16;
                 a->i_predict4x4[idx] = i_best;
+                i_res_energy_i4x4 += h->pixf.ssd[PIXEL_4x4]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
                 if( i_cost > i_satd_thresh || idx == 15 )
                     break;
                 h->mb.cache.intra4x4_pred_mode[x264_scan8[idx]] = i_best;
             }
             else
             {
+                int i_res_energy;
+
                 if( !h->mb.b_lossless && predict_mode[5] >= 0 )
                 {
                     ALIGNED_ARRAY_16( int32_t, satd,[9] );
@@ -1117,6 +1148,9 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                     i_best = satd[I_PRED_4x4_DC]; a->i_predict4x4[idx] = I_PRED_4x4_DC;
                     COPY2_IF_LT( i_best, satd[I_PRED_4x4_H], a->i_predict4x4[idx], I_PRED_4x4_H );
                     COPY2_IF_LT( i_best, satd[I_PRED_4x4_V], a->i_predict4x4[idx], I_PRED_4x4_V );
+
+                    h->predict_4x4[a->i_predict4x4[idx]]( p_dst_by );
+                    i_res_energy = h->pixf.ssd[PIXEL_4x4]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
 
                     /* Take analysis shortcuts: don't analyse modes that are too
                      * far away direction-wise from the favored mode. */
@@ -1132,6 +1166,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                     {
                         int i_satd;
                         int i_mode = *predict_mode;
+                        int i_res_energy_temp;
 
                         if( h->mb.b_lossless )
                             x264_predict_lossless_4x4( h, p_dst_by, 0, idx, i_mode );
@@ -1139,6 +1174,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                             h->predict_4x4[i_mode]( p_dst_by );
 
                         i_satd = h->pixf.mbcmp[PIXEL_4x4]( p_dst_by, FDEC_STRIDE, p_src_by, FENC_STRIDE );
+                        i_res_energy_temp = h->pixf.ssd[PIXEL_4x4]( p_src_by, FENC_STRIDE, p_dst_by, FDEC_STRIDE );
                         if( i_pred_mode == x264_mb_pred_mode4x4_fix(i_mode) )
                         {
                             i_satd -= lambda * 3;
@@ -1146,15 +1182,17 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
                             {
                                 i_best = i_satd;
                                 a->i_predict4x4[idx] = i_mode;
+                                i_res_energy = i_res_energy_temp;
                                 break;
                             }
                         }
 
-                        COPY2_IF_LT( i_best, i_satd, a->i_predict4x4[idx], i_mode );
+                        COPY3_IF_LT( i_best, i_satd, a->i_predict4x4[idx], i_mode, i_res_energy, i_res_energy_temp );
                     }
                 }
 
                 i_cost += i_best + 3 * lambda;
+                i_res_energy_i4x4 += i_res_energy;
                 if( i_cost > i_satd_thresh || idx == 15 )
                     break;
                 if( h->mb.b_lossless )
@@ -1169,6 +1207,7 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
         if( idx == 15 )
         {
             a->i_satd_i4x4 = i_cost;
+            a->i_res_energy_i4x4 = i_res_energy_i4x4;
             if( h->mb.i_skip_intra )
             {
                 h->mc.copy[PIXEL_16x16]( h->mb.pic.i4x4_fdec_buf, 16, p_dst, FDEC_STRIDE, 16 );
@@ -1182,7 +1221,10 @@ static void x264_mb_analyse_intra( x264_t *h, x264_mb_analysis_t *a, int i_satd_
             }
         }
         else
+        {
             a->i_satd_i4x4 = COST_MAX;
+            a->i_res_energy_i4x4 = 0;
+        }
     }
 }
 
@@ -3184,17 +3226,24 @@ intra_analysis:
         analysis.i_luma_distortion = analysis.i_luma_distortion_i16x16;
         analysis.i_chroma_distortion = analysis.i_chroma_distortion_i16x16;
         analysis.i_psy_energy = analysis.i_psy_energy_i16x16;
+        analysis.i_res_energy = analysis.i_res_energy_i16x16;
         COPY4_IF_LT( i_cost, analysis.i_satd_i4x4, h->mb.i_type, I_4x4, analysis.i_luma_distortion, analysis.i_luma_distortion_i4x4, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i4x4 );
         COPY4_IF_LT( i_cost, analysis.i_satd_i8x8, h->mb.i_type, I_8x8, analysis.i_luma_distortion, analysis.i_luma_distortion_i8x8, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i8x8 );
         if( h->mb.i_type == I_4x4 )
+        {
             analysis.i_psy_energy = analysis.i_psy_energy_i4x4;
+            analysis.i_res_energy = analysis.i_res_energy_i4x4;
+        }
         else if( h->mb.i_type == I_8x8 )
+        {
             analysis.i_psy_energy = analysis.i_psy_energy_i8x8;
+            analysis.i_res_energy = analysis.i_res_energy_i8x8;
+        }
 
         if( analysis.i_satd_pcm < i_cost )
         {
             h->mb.i_type = I_PCM;
-            analysis.i_luma_distortion = analysis.i_chroma_distortion = analysis.i_psy_energy = 0;
+            analysis.i_luma_distortion = analysis.i_chroma_distortion = analysis.i_psy_energy = analysis.i_res_energy = 0;
         }
 
         else if( analysis.i_mbrd >= 2 )
@@ -3491,13 +3540,25 @@ skip_analysis:
             COPY4_IF_LT( i_cost, analysis.i_satd_i4x4, i_type, I_4x4, analysis.i_luma_distortion, analysis.i_luma_distortion_i4x4, analysis.i_chroma_distortion, analysis.i_chroma_distortion_i4x4 );
             COPY4_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM, analysis.i_luma_distortion, 0, analysis.i_chroma_distortion, 0 );
             if( i_type == I_16x16 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i16x16;
+                analysis.i_res_energy = analysis.i_res_energy_i16x16;
+            }
             else if( i_type == I_8x8 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i8x8;
+                analysis.i_res_energy = analysis.i_res_energy_i8x8;
+            }
             else if( i_type == I_4x4 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i4x4;
+                analysis.i_res_energy = analysis.i_res_energy_i4x4;
+            }
             else if( i_type == I_PCM )
+            {
                 analysis.i_psy_energy = 0;
+                analysis.i_res_energy = 0;
+            }
 
             h->mb.i_type = i_type;
 
@@ -3966,13 +4027,25 @@ skip_analysis:
             COPY4_IF_LT( i_cost, analysis.i_satd_pcm, i_type, I_PCM, analysis.i_luma_distortion, 0, analysis.i_chroma_distortion, 0 );
 
             if( i_type == I_16x16 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i16x16;
+                analysis.i_res_energy = analysis.i_res_energy_i16x16;
+            }
             else if( i_type == I_8x8 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i8x8;
+                analysis.i_res_energy = analysis.i_res_energy_i8x8;
+            }
             else if( i_type == I_4x4 )
+            {
                 analysis.i_psy_energy = analysis.i_psy_energy_i4x4;
+                analysis.i_res_energy = analysis.i_res_energy_i4x4;
+            }
             else if( i_type == I_PCM )
+            {
                 analysis.i_psy_energy = 0;
+                analysis.i_res_energy = 0;
+            }
 
             h->mb.i_type = i_type;
             h->mb.i_partition = i_partition;
@@ -4110,6 +4183,8 @@ skip_analysis:
     h->mb.i_mb_luma_distortion += analysis.i_luma_distortion;
     h->mb.i_mb_chroma_distortion += analysis.i_chroma_distortion;
     h->mb.i_mb_psy_energy += analysis.i_psy_energy;
+    if( IS_INTRA( h->mb.i_type ) )
+        h->mb.i_mb_res_energy += analysis.i_res_energy;
 }
 
 /*-------------------- Update MB from the analysis ----------------------*/
